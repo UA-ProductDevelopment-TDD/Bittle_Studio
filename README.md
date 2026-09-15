@@ -29,13 +29,25 @@ Keyboard: **F** focuses the robot; **Space** plays/pauses motion outside text fi
 
 ## Export to the real robot
 
-**Export motion** produces a standalone Python script using the official `PetoiRobot` API and simultaneous `I` joint commands. It samples the same timeline interpolation at the selected Motion Hz (50 Hz by default). The original exporter incorrectly used sequential `M`; new exports correct that. Half-speed export is the default.
+**Export motion** produces a standalone Python script using the official `PetoiRobot` API and simultaneous `I` joint commands. Choose a motion type before generating it: **Pose** sends the currently displayed pose once, **Behavior** plays the timeline once, and **Gait** repeats the timeline until Ctrl+C. Studio's direct hardware player has its own stop button. The visible repeat checkbox follows this choice. Export samples the same timeline interpolation at the selected Motion Hz (50 Hz by default). Half-speed export is the default.
 
 Suggested servo indices are LF/RF/RB/LB shoulders 8/9/10/11 and knees 12/13/14/15. **Direction and offset are not calibrated.** Verify each joint against your real robot, set its direction and offset, and tick Verified. Export rejects unverified/duplicate indices and angles outside ±125°. This numerical bound is not a physical safety guarantee.
 
-Install `PetoiRobot` in the Python environment used to run the downloaded file. Running `python bittle_motion.py` prints a dry run without connecting. `python bittle_motion.py --execute` connects, pauses before sending the initial pose, and asks for another check before playback. Ctrl+C stops sending targets and closes the port; the robot retains its last target. No commands are sent to hardware by this web application.
+Install `PetoiRobot` in the Python environment used to run the downloaded file. Running `python bittle_motion.py` prints a dry run without connecting. `python bittle_motion.py --execute` connects, pauses before sending the initial pose, and asks for another check before playback. Ctrl+C stops a gait and closes the port; the robot retains its last target.
 
-References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial protocol](https://docs.petoi.com/apis/serial-protocol), [skill data format](https://docs.petoi.com/applications/skill-creation). Inspiration: [Petoi Bittle X simulator](https://bittlex-sim.petoi.com/).
+## Bluetooth and direct robot testing
+
+Click **Bluetooth** in the header. The panel supports the same Petoi connection choices used by the Bittle AI voice project:
+
+- **Bluetooth BLE** connects directly to the Petoi Nordic UART service. Choose Bittle or Petoi in the browser device picker.
+- **Bluetooth / USB serial** opens a browser-selected serial port at 115200 baud. Pair a classic Bluetooth module in Windows first, then choose its outgoing COM port.
+- **Test mode** exercises the complete playback path and logs packets without sending anything to a robot.
+
+Verify all servo indexes, directions and offsets in **Export motion** before using hardware playback. The hardware panel can send the displayed pose, play a behavior once, or repeat a gait until **Stop motion** is pressed. Stop cancels scheduled frames immediately and requests `kbalance`. Motion frames use the binary simultaneous `I` packet (`I`, signed index/angle bytes, `~`), which fits eight mapped joints in a single 18-byte BLE write. The selected Hz controls target scheduling; the actual rate can be lower when Bluetooth or firmware cannot accept writes fast enough.
+
+Web Bluetooth and Web Serial require a compatible Chromium browser such as Chrome or Edge and a local secure context (`http://127.0.0.1` is allowed). The connection picker always requires a user click. Bittle Studio does not reconnect or move the robot on startup.
+
+References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial protocol](https://docs.petoi.com/apis/serial-protocol), [skill data format](https://docs.petoi.com/applications/skill-creation). Inspiration: [Petoi Bittle X simulator](https://bittlex-sim.petoi.com/) and [Bittle AI voice](https://github.com/UA-ProductDevelopment-TDD/Bittle_AI_voice).
 
 ## Physics assumptions and limits
 
@@ -45,7 +57,7 @@ References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial 
 - Self-collision is enabled except between parent and child links. Ground friction is editable, as is each environment object's friction. No spring compliance, servo backlash, motor electronics, battery limits, balance controller or sensor noise is modelled.
 - The supplied mesh set has 13 visual links and no head model; this application renders those supplied assets. It does not invent missing geometry.
 - The crouch example is a pose study, not a validated walking gait. Simulated motion does not guarantee balance or safe transfer to hardware. No real Bittle was connected or tested during development.
-- This is an initial workbench, not Blender feature parity: no inverse-kinematics foot handles, curve editor, texture authoring, native OpenCat firmware skill export, or direct hardware streaming yet. Multiple Python controllers and multiple URDFs are supported.
+- This is an initial workbench, not Blender feature parity: no inverse-kinematics foot handles, curve editor, texture authoring or native OpenCat firmware skill export yet. Multiple Python controllers, multiple URDFs and direct Petoi BLE/serial timeline testing are supported.
 - One local shared simulation per server. Multiple browser tabs operate on the same world. The server binds to loopback; do not expose it to a network as a multi-user service.
 
 ## Development

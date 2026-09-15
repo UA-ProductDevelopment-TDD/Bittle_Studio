@@ -6,7 +6,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 import server
-from motion_export import build_motion
+from motion_export import build_motion, python_motion
 
 
 class CodeWorkbenchTest(unittest.TestCase):
@@ -124,6 +124,39 @@ class CodeWorkbenchTest(unittest.TestCase):
         self.c.post('/api/scripts/run', json={'timeout':1})
         self.assertEqual(self.wait_finished()['jobs'][0]['status'],'timed out')
         self.assertEqual(self.c.put('/api/scripts',json={'files':[{'name':'../escape.py','source':''}]}).status_code,400)
+
+    def test_05_pose_behavior_and_gait_exports(self):
+        sim = server.sim
+        with sim.lock:
+            mapping = json.loads(json.dumps(sim.mapping))
+            for item in mapping.values():
+                item['verified'] = True
+            first_name = sim.joints[0]['name']
+            zero = {joint['name']: 0 for joint in sim.joints}
+            sim.set_frames([
+                {'time': 0, 'pose': zero, 'easing': 'linear'},
+                {'time': .2, 'pose': {**zero, first_name: 17}, 'easing': 'linear'}
+            ])
+            sim.targets[first_name] = 17
+            pose, _, pose_meta = build_motion(sim, {'mapping': mapping, 'motion_type': 'pose'}, True)
+            self.assertEqual(len(pose), 1)
+            self.assertEqual(pose_meta['type'], 'pose')
+            self.assertFalse(pose_meta['loop'])
+            behavior_source, _, behavior_meta = python_motion(
+                sim, {'mapping': mapping, 'motion_type': 'behavior', 'hz': 10, 'speed': 1})
+            gait_source, _, gait_meta = python_motion(
+                sim, {'mapping': mapping, 'motion_type': 'gait', 'hz': 10, 'speed': 1})
+        ast.parse(behavior_source)
+        ast.parse(gait_source)
+        self.assertFalse(behavior_meta['loop'])
+        self.assertTrue(gait_meta['loop'])
+        self.assertIn("while True:", gait_source)
+        self.assertIn("if not MOTION['loop']", behavior_source)
+        samples = self.c.post('/api/motion-samples', json={
+            'mapping': mapping, 'motion_type': 'pose', 'hz': 50
+        })
+        self.assertEqual(samples.status_code, 200, samples.text)
+        self.assertEqual(samples.json()['metadata']['samples'], 1)
 
 
 if __name__=='__main__':

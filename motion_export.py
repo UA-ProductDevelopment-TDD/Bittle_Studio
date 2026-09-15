@@ -4,8 +4,11 @@ import pprint
 
 
 def build_motion(sim, body, hardware=True):
-    if len(sim.frames) < 2:
-        raise ValueError('Add at least two keyframes before exporting')
+    motion_type = body.get('motion_type', 'behavior')
+    if motion_type not in ('pose', 'behavior', 'gait'):
+        raise ValueError('Motion type must be pose, behavior or gait')
+    if motion_type != 'pose' and len(sim.frames) < 2:
+        raise ValueError('Add at least two keyframes before exporting a behavior or gait')
     mapping = body.get('mapping', sim.mapping)
     used = set()
     for joint in sim.joints:
@@ -25,17 +28,22 @@ def build_motion(sim, body, hardware=True):
         raise ValueError('Speed must be between 0.1 and 2')
     if direction not in ('forward', 'reverse'):
         raise ValueError('Choose forward or reverse order')
-    duration = sim.frames[-1]['time'] / speed
+    duration = 0 if motion_type == 'pose' else sim.frames[-1]['time'] / speed
     if duration * hz > 150000:
         raise ValueError('Motion is too large; lower Hz or shorten the timeline')
     samples = []
-    # Include the first and exact last pose once; never reverse timestamps.
+    # A pose captures the currently displayed target. Behaviors and gaits include
+    # the first and exact last timeline pose once; timestamps stay chronological.
     for i in range(math.ceil(duration * hz) + 1):
         timestamp = min(i / hz, duration)
         t = timestamp * speed
-        if direction == 'reverse':
+        if motion_type == 'pose':
+            pose = sim.targets
+        elif direction == 'reverse':
             t = sim.frames[-1]['time'] - t
-        pose = sim.sample(t)
+            pose = sim.sample(t)
+        else:
+            pose = sim.sample(t)
         pairs = []
         for joint in sim.joints:
             m = mapping[joint['name']]
@@ -45,7 +53,8 @@ def build_motion(sim, body, hardware=True):
             pairs.append((m['servo'], angle))
         values = [v for pair in sorted(pairs) for v in pair]
         samples.append([round(timestamp, 8), values])
-    metadata = {'hz': hz, 'speed': speed, 'direction': direction, 'duration': duration, 'samples': len(samples)}
+    metadata = {'type': motion_type, 'loop': motion_type == 'gait', 'hz': hz, 'speed': speed,
+                'direction': direction, 'duration': duration, 'samples': len(samples)}
     return samples, mapping, metadata
 
 
@@ -54,6 +63,7 @@ def python_motion(sim, body, hardware=True):
     return '''"""Bittle Studio motion. Hardware: --execute. Without flags: dry run.
 In Studio's code panel PetoiRobot is replaced by the selected simulation target.
 Uses I (simultaneous), not M (sequential). Requested Hz is not guaranteed by serial hardware.
+Pose and behavior exports run once. A gait repeats until Ctrl+C.
 """
 import argparse
 import time
@@ -77,16 +87,27 @@ def main():
     try:
         input('Support the robot and press Enter to send the first pose.')
         rotateJoints('I', SAMPLES[0][1], 2)
+        if MOTION['type'] == 'pose':
+            print('Pose sent.')
+            return
         input('Check the first pose, then Enter to play (Ctrl+C cancels).')
-        start = time.monotonic()
-        sent = 0
-        for timestamp, joints in SAMPLES[1:]:
-            time.sleep(max(0, start + timestamp - time.monotonic()))
-            rotateJoints('I', joints, 0)
-            sent += 1
-        elapsed = time.monotonic() - start
-        print('Completed in %.3fs; effective rate %.1f Hz (requested %.1f)' %
-              (elapsed, sent / max(elapsed, 1e-9), MOTION['hz']))
+        rounds = 0
+        include_first = False
+        while True:
+            start = time.monotonic()
+            sequence = SAMPLES if include_first else SAMPLES[1:]
+            round_sent = 0
+            for timestamp, joints in sequence:
+                time.sleep(max(0, start + timestamp - time.monotonic()))
+                rotateJoints('I', joints, 0)
+                round_sent += 1
+            elapsed = time.monotonic() - start
+            rounds += 1
+            print('Round %d completed in %.3fs; effective rate %.1f Hz (requested %.1f)' %
+                  (rounds, elapsed, round_sent / max(elapsed, 1e-9), MOTION['hz']))
+            if not MOTION['loop']:
+                break
+            include_first = True
     except KeyboardInterrupt:
         print('Stopped sending targets.')
     finally:

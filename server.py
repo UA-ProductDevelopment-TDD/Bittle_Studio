@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from engine import DATA, ROOT, Simulation, asset_path, asset_url
-from motion_export import python_motion
+from motion_export import build_motion, python_motion
 from scripting import ScriptRunner, validate_scripts
 
 sim = None
@@ -297,6 +297,16 @@ def motion_code(body: dict):
     with sim.lock:
         script, mapping, metadata = python_motion(sim, body, hardware=False)
         return {'source': script, 'metadata': metadata}
+
+
+@app.post('/api/motion-samples')
+def motion_samples(body: dict):
+    """Return verified servo-space samples for an explicit browser hardware action."""
+    with sim.lock:
+        samples, mapping, metadata = build_motion(sim, body, hardware=True)
+        sim.mapping = mapping
+        checkpoint()
+        return {'samples': samples, 'metadata': metadata}
 
 
 @app.get('/api/scripts')

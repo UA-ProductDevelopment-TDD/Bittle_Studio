@@ -1,0 +1,51 @@
+.export-options {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hardware-connect,
+.hardware-motion,
+.hardware-actions,
+.hardware-command {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.hardware-connect label,
+.hardware-motion label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.hardware-motion {
+  padding: 18px 0;
+  margin: 18px 0;
+  border-block: 1px solid var(--line);
+}
+
+.hardware-actions { margin-bottom: 20px; }
+.hardware-status {
+  padding: 10px 12px;
+  margin-top: 14px !important;
+  background: #111a22;
+  border-radius: 6px;
+  color: var(--accent) !important;
+}
+
+.hardware-command { margin-top: 7px; }
+.hardware-command input { flex: 1; min-width: 260px; }
+.hardware-log {
+  height: 150px;
+  overflow: auto;
+  background: #0d151c;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  color: #b8c6d0;
+  font: 12px/1.5 Consolas, monospace;
+  white-space: pre-wrap;
+}
