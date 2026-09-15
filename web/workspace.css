@@ -1,0 +1,9 @@
+/* Keep the scene and timeline in view; inspectors scroll independently. */
+@media (min-width:851px) {
+  main {height:calc(100vh - 78px);min-height:600px;overflow:hidden}
+  .scene-panel,.inspector {overflow-y:auto;min-height:0}
+  .workspace {min-height:0}
+  #viewport {min-height:200px}
+  .viewport-bar,.simulation-bar,.timeline {flex-shrink:0}
+  .timeline {min-height:220px}
+}
