@@ -9,7 +9,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const $ = id => document.getElementById(id);
 let model, state, selected = null, selectedFrame = null, frameList = [], mapping = {}, loading = false;
 let toastTimer, pendingPose = {}, poseTimer;
-let codePanel, hardwarePanel, selectedActor=null;
+let codePanel, hardwarePanel, selectedActor=null, mainSelected=true, gizmoTarget='robot', robotDrag=null;
 const robotLinks = new Map(), objectMeshes = new Map(), meshCache = new Map();
 function toast(message, error = false) {
   const dialog=document.querySelector('dialog[open]');
@@ -57,11 +57,27 @@ floor.receiveShadow = true; floor.position.z = -.001; scene.add(floor);
 const grid = new THREE.GridHelper(8, 160, 0x80919c, 0x506571); grid.rotation.x = Math.PI / 2; grid.position.z = .0001;
 grid.material.transparent = true; grid.material.opacity = .42; scene.add(grid);
 const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setSize(.7); scene.add(gizmo.getHelper());
+const robotHandle = new THREE.Object3D(); scene.add(robotHandle);
 gizmo.addEventListener('dragging-changed', e => controls.enabled = !e.value);
+gizmo.addEventListener('mouseDown', () => {
+  if (gizmoTarget !== 'robot') return;
+  robotHandle.updateMatrixWorld(true);
+  robotDrag = {handle: robotHandle.matrixWorld.clone(), groups: new Map()};
+  for (const [name, group] of robotLinks) if (!name.includes('/')) {group.updateMatrixWorld(true);robotDrag.groups.set(group,group.matrixWorld.clone());}
+});
+gizmo.addEventListener('objectChange', () => {
+  if (gizmoTarget !== 'robot' || !robotDrag) return;
+  robotHandle.updateMatrixWorld(true);
+  const delta=robotHandle.matrixWorld.clone().multiply(robotDrag.handle.clone().invert());
+  for(const [group,start] of robotDrag.groups)delta.clone().multiply(start).decompose(group.position,group.quaternion,group.scale);
+  syncRobotFields();
+});
 gizmo.addEventListener('mouseUp', async () => {
-  if (!selected || !gizmo.object) return;
-  const obj = model.objects.find(o => o.id === selected); obj.position = gizmo.object.position.toArray();
-  try {await api('/api/objects', obj); selectObject(selected); } catch (e) {toast(e.message, true);}
+  if (!gizmo.object) return;
+  try {
+    if(gizmoTarget==='robot'){robotDrag=null;model.robot_position=robotHandle.position.toArray();model.robot_rotation=robotHandle.rotation.toArray().slice(0,3);await api('/api/robot-transform',{position:model.robot_position,rotation:model.robot_rotation});}
+    else if(selected){const obj=model.objects.find(o=>o.id===selected);obj.position=gizmo.object.position.toArray();obj.rotation=gizmo.object.rotation.toArray().slice(0,3);await api('/api/objects',obj);selectObject(selected);}
+  } catch(e){toast(e.message,true);await refresh();}
 });
 const selectionBox = new THREE.BoxHelper(undefined, 0xc0e581); selectionBox.visible = false; scene.add(selectionBox);
 new ResizeObserver(() => {const w=$('viewport').clientWidth,h=$('viewport').clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe($('viewport'));
@@ -118,7 +134,7 @@ function renderObjectList() {
   for(const o of model.objects) {const b=document.createElement('button');b.className='scene-item'+(selected===o.id?' selected':'');const icon=document.createElement('span');icon.textContent=o.type==='sphere'?'○':'◇';const text=document.createElement('div');text.textContent=o.name;const small=document.createElement('small');small.textContent=(o.mass===0?'Static':o.mass+' kg')+' · '+o.type;text.append(small);b.append(icon,text);b.onclick=()=>selectObject(o.id);$('objectList').append(b);}
 }
 function selectObject(id) {
-  selectedActor=null;
+  selectedActor=null;mainSelected=false;gizmoTarget='object';
   selected=id; const obj=model.objects.find(o=>o.id===id); if(!obj)return;
   tab('object');$('selectRobot').classList.remove('selected');$('inspectorTitle').textContent='Object inspector';$('selectionLabel').textContent=obj.type.toUpperCase();
   $('objectEmpty').classList.add('hidden');$('objectForm').classList.remove('hidden');$('objName').value=obj.name;
@@ -128,7 +144,14 @@ function selectObject(id) {
   const mesh=objectMeshes.get(id);if(!state?.running)gizmo.attach(mesh);selectionBox.setFromObject(mesh);selectionBox.visible=true;renderObjectList();
 }
 for(const kind of ['position','rotation','size']) for(let i=0;i<3;i++) {const l=document.createElement('label');l.textContent=['X','Y','Z'][i];const input=document.createElement('input');input.id=kind+i;input.type='number';input.step=kind==='rotation'?'1':'.01';input.required=true;if(kind==='size')input.min='.000001';l.append(input);$(kind+'Fields').append(l);}
-on('selectRobot',()=>{selectedActor=null;selected=null;gizmo.detach();selectionBox.visible=false;tab('pose');$('selectRobot').classList.add('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='BITTLE';renderObjectList();});
+function syncRobotFields(){const p=robotHandle.position,r=robotHandle.rotation;[p.x,p.y,p.z].forEach((v,i)=>$('robotPosition'+i).value=v.toFixed(4));[r.x,r.y,r.z].forEach((v,i)=>$('robotRotation'+i).value=THREE.MathUtils.radToDeg(v).toFixed(2));}
+function selectMainRobot(){selectedActor=null;selected=null;mainSelected=true;gizmoTarget='robot';gizmo.detach();selectionBox.visible=false;tab('pose');$('selectRobot').classList.add('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='BITTLE';renderObjectList();if(!state?.running)gizmo.attach(robotHandle);syncRobotFields();}
+on('selectRobot',selectMainRobot);
+on('moveRobot',()=>{selectMainRobot();gizmo.setMode('translate');});
+on('rotateRobot',()=>{selectMainRobot();gizmo.setMode('rotate');});
+async function applyRobotPlacement(position,rotation){if(state?.running)throw new Error('Pause physics before moving the robot');await api('/api/robot-transform',{position,rotation});model.robot_position=position;model.robot_rotation=rotation;robotHandle.position.fromArray(position);robotHandle.rotation.set(...rotation,'XYZ');syncRobotFields();}
+on('applyRobotPlacement',()=>applyRobotPlacement([0,1,2].map(i=>Number($('robotPosition'+i).value)),[0,1,2].map(i=>THREE.MathUtils.degToRad(Number($('robotRotation'+i).value)))));
+on('resetRobotPlacement',()=>applyRobotPlacement([0,0,.2],[0,0,0]));
 const raycaster=new THREE.Raycaster();let down;
 renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
 renderer.domElement.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4||gizmo.dragging||gizmo.axis)return;const rect=renderer.domElement.getBoundingClientRect();raycaster.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),camera);const hit=raycaster.intersectObjects([...objectMeshes.values()],true)[0];if(hit)selectObject(hit.object.userData.objectId);});
@@ -197,14 +220,14 @@ function renderActors(){
   for(const actor of model.actors||[]){const button=document.createElement('button');button.className='scene-item'+(selectedActor===actor.id?' selected':'');const icon=document.createElement('span');icon.textContent='▧';const name=document.createElement('div');name.textContent=actor.name;const detail=document.createElement('small');detail.textContent='URDF · '+actor.joints.length+' joints';name.append(detail);button.append(icon,name);button.onclick=()=>selectActor(actor.id);$('actorList').append(button);}
 }
 function selectActor(id){
-  const actor=model.actors.find(a=>a.id===id);if(!actor)return;selectedActor=id;selected=null;gizmo.detach();selectionBox.visible=false;$('selectRobot').classList.remove('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='URDF';tab('actor');$('actorEmpty').classList.add('hidden');$('actorForm').classList.remove('hidden');$('actorName').value=actor.name;$('actorUrdf').value=actor.xml;$('actorFixed').checked=actor.fixed;['Position','Rotation'].forEach(kind=>actor[kind.toLowerCase()].forEach((v,i)=>$('actor'+kind+i).value=(kind==='Rotation'?THREE.MathUtils.radToDeg(v):v).toFixed(4)));renderActors();renderObjectList();
+  const actor=model.actors.find(a=>a.id===id);if(!actor)return;selectedActor=id;selected=null;mainSelected=false;gizmoTarget='actor';gizmo.detach();selectionBox.visible=false;$('selectRobot').classList.remove('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='URDF';tab('actor');$('actorEmpty').classList.add('hidden');$('actorForm').classList.remove('hidden');$('actorName').value=actor.name;$('actorUrdf').value=actor.xml;$('actorFixed').checked=actor.fixed;['Position','Rotation'].forEach(kind=>actor[kind.toLowerCase()].forEach((v,i)=>$('actor'+kind+i).value=(kind==='Rotation'?THREE.MathUtils.radToDeg(v):v).toFixed(4)));renderActors();renderObjectList();
 }
 for(const kind of ['Position','Rotation'])for(let i=0;i<3;i++){const label=document.createElement('label');label.textContent=['X','Y','Z'][i];const input=document.createElement('input');input.type='number';input.step='any';input.id='actor'+kind+i;input.required=true;label.append(input);$('actor'+kind).append(label);}
 on('duplicateRobot',async()=>{await codePanel?.save();const actor=await api('/api/actors',{duplicate_main:true});await refresh();selectActor(actor.id);focusRobot();});
 on('actorForm',async e=>{e.preventDefault();await codePanel?.save();const body={name:$('actorName').value,xml:$('actorUrdf').value,fixed:$('actorFixed').checked,position:[0,1,2].map(i=>Number($('actorPosition'+i).value)),rotation:[0,1,2].map(i=>THREE.MathUtils.degToRad(Number($('actorRotation'+i).value)))};await api('/api/actors/'+selectedActor,body);await refresh();selectActor(selectedActor);toast('Robot updated.');},'submit');
 on('deleteActor',async()=>{await api('/api/actors/'+selectedActor,{},'DELETE');selectedActor=null;await refresh();$('actorForm').classList.add('hidden');$('actorEmpty').classList.remove('hidden');});
 
-async function refresh(){loading=true;try{model=await api('/api/model');frameList=model.frames;selectedFrame=null;buildJoints();timeline();$('urdf').value=model.xml;$('gravity').value=model.gravity;$('friction').value=model.friction;$('fixed').checked=model.fixed;$('physicsHz').value=model.physics_hz;$('motionHz').value=model.motion_hz;$('motionDirection').value=model.direction;$('diagnostics').replaceChildren();for(const w of model.warnings){const p=document.createElement('p');p.textContent=w;$('diagnostics').append(p);}await buildRobot();await buildObjects();codePanel?.targets();}finally{loading=false;}}
-function applyState(s){state=s;if(!model)return;for(const [id,a] of Object.entries(s.actors||{})){for(const [name,[pos,quat]] of Object.entries(a.transforms)){const group=robotLinks.get(id+'/'+name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}}for(const [name,[pos,quat]] of Object.entries(s.transforms)){const group=robotLinks.get(name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}for(const [id,[pos,quat]] of Object.entries(s.objects)){const mesh=objectMeshes.get(id);if(mesh&&!(gizmo.dragging&&id===selected)){mesh.position.fromArray(pos);mesh.quaternion.fromArray(quat);}}$('run').textContent=s.running?'Ⅱ Pause physics':'▶ Run physics';$('play').textContent=s.playing?'Ⅱ Pause motion':'▶ Play motion';$('mode').textContent=s.running?'PHYSICS LIVE':'POSE MODE';$('simTime').textContent=s.time.toFixed(2)+' s';$('height').textContent=s.height.toFixed(3)+' m';$('contacts').textContent=s.contacts;$('roll').textContent=THREE.MathUtils.radToDeg(s.rpy[0]).toFixed(1)+'°';if(document.activeElement!==$('scrubber'))$('scrubber').value=s.playhead;if(s.playing)$('frameTime').value=s.playhead.toFixed(2);updatePoseInputs(s.targets);if(s.running)gizmo.detach();else if(selected&&!gizmo.object&&objectMeshes.has(selected))gizmo.attach(objectMeshes.get(selected));}
+async function refresh(){loading=true;try{model=await api('/api/model');frameList=model.frames;selectedFrame=null;robotHandle.position.fromArray(model.robot_position||[0,0,.2]);robotHandle.rotation.set(...(model.robot_rotation||[0,0,0]),'XYZ');syncRobotFields();buildJoints();timeline();$('urdf').value=model.xml;$('gravity').value=model.gravity;$('friction').value=model.friction;$('fixed').checked=model.fixed;$('physicsHz').value=model.physics_hz;$('motionHz').value=model.motion_hz;$('motionDirection').value=model.direction;$('diagnostics').replaceChildren();for(const w of model.warnings){const p=document.createElement('p');p.textContent=w;$('diagnostics').append(p);}await buildRobot();await buildObjects();codePanel?.targets();}finally{loading=false;}}
+function applyState(s){state=s;if(!model)return;for(const [id,a] of Object.entries(s.actors||{})){for(const [name,[pos,quat]] of Object.entries(a.transforms)){const group=robotLinks.get(id+'/'+name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}}if(!(gizmo.dragging&&gizmoTarget==='robot'))for(const [name,[pos,quat]] of Object.entries(s.transforms)){const group=robotLinks.get(name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}for(const [id,[pos,quat]] of Object.entries(s.objects)){const mesh=objectMeshes.get(id);if(mesh&&!(gizmo.dragging&&id===selected)){mesh.position.fromArray(pos);mesh.quaternion.fromArray(quat);}}$('run').textContent=s.running?'Ⅱ Pause physics':'▶ Run physics';$('play').textContent=s.playing?'Ⅱ Pause motion':'▶ Play motion';$('mode').textContent=s.running?'PHYSICS LIVE':'POSE MODE';$('simTime').textContent=s.time.toFixed(2)+' s';$('height').textContent=s.height.toFixed(3)+' m';$('contacts').textContent=s.contacts;$('roll').textContent=THREE.MathUtils.radToDeg(s.rpy[0]).toFixed(1)+'°';if(document.activeElement!==$('scrubber'))$('scrubber').value=s.playhead;if(s.playing)$('frameTime').value=s.playhead.toFixed(2);updatePoseInputs(s.targets);if(s.running)gizmo.detach();else if(!gizmo.object){if(mainSelected)gizmo.attach(robotHandle);else if(selected&&objectMeshes.has(selected))gizmo.attach(objectMeshes.get(selected));}}
 async function poll(){try{if(!loading){applyState(await api('/api/state'));$('connection').textContent='Bullet · '+state.physics_hz+' Hz';}}catch(e){$('connection').textContent='Disconnected · retrying';}setTimeout(poll,16);}
-try {await refresh();applyState(await api('/api/state'));focusRobot();$('loading').remove();codePanel=(await import('./code-panel.js')).initCodePanel({api,toast,getModel:()=>model,refresh});hardwarePanel=(await import('./hardware.js')).initHardware({api,toast,getModel:()=>model,getMapping:()=>Object.keys(mapping).length?mapping:model.mapping});poll();}catch(e){$('loading').textContent='Could not load Bittle: '+e.message;toast(e.message,true);}
+try {await refresh();applyState(await api('/api/state'));focusRobot();$('loading').remove();codePanel=(await import('./code-panel.js')).initCodePanel({api,toast,getModel:()=>model,refresh});hardwarePanel=(await import('./hardware.js')).initHardware({api,toast,getModel:()=>model,getMapping:()=>Object.keys(mapping).length?mapping:model.mapping,refresh});window.dispatchEvent(new Event('bittle-hardware-ready'));poll();}catch(e){$('loading').textContent='Could not load Bittle: '+e.message;toast(e.message,true);}

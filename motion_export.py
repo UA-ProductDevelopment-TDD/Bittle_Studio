@@ -1,6 +1,7 @@
 """One chronological sampler shared by exports and code-panel previews."""
 import math
 import pprint
+import hashlib
 
 
 def build_motion(sim, body, hardware=True):
@@ -56,6 +57,40 @@ def build_motion(sim, body, hardware=True):
     metadata = {'type': motion_type, 'loop': motion_type == 'gait', 'hz': hz, 'speed': speed,
                 'direction': direction, 'duration': duration, 'samples': len(samples)}
     return samples, mapping, metadata
+
+
+def firmware_skill(sim, body):
+    """Build an OpenCat K packet payload. Firmware stores it for later T replays."""
+    requested_type = body.get('motion_type', 'behavior')
+    duration = 0 if requested_type == 'pose' or not sim.frames else sim.frames[-1]['time'] / float(body.get('speed', .5))
+    # OpenCat stores the behavior frame count in a signed byte. Twenty Hz is
+    # smooth enough for firmware interpolation while keeping typical uploads small.
+    skill_hz = min(float(body.get('hz', sim.motion_hz)), 20., 119 / duration if duration > 0 else 20.)
+    samples, mapping, metadata = build_motion(sim, {**body, 'hz': max(1., skill_hz)}, hardware=True)
+    if len(samples) > 120:
+        raise ValueError('Motion is too long for one firmware skill; shorten it or increase speed')
+    full_frames = []
+    for _, pairs in samples:
+        angles = [0] * 16
+        for index, angle in zip(pairs[::2], pairs[1::2]):
+            angles[index] = angle
+        full_frames.append(angles)
+    if requested_type == 'pose':
+        data = [1, 0, 0, 1] + full_frames[0]
+    else:
+        data = [-len(full_frames), 0, 0, 1, 0, len(full_frames) - 1, -1 if requested_type == 'gait' else 0]
+        previous = full_frames[0]
+        for frame in full_frames:
+            delta = max(abs(a - b) for a, b in zip(frame, previous))
+            step = max(1, min(125, math.ceil(delta * .02 * metadata['hz'])))
+            data.extend(frame + [step, 0, 0, 0])
+            previous = frame
+    if not all(isinstance(value, int) and -128 <= value <= 127 for value in data):
+        raise ValueError('Firmware skill contains a value outside signed-byte range')
+    raw = bytes(value & 255 for value in data)
+    metadata = {**metadata, 'firmware_hz': metadata['hz'], 'bytes': len(raw) + 2,
+                'signature': hashlib.sha256(raw).hexdigest()[:16], 'recall_command': 'T'}
+    return data, mapping, metadata
 
 
 def python_motion(sim, body, hardware=True):

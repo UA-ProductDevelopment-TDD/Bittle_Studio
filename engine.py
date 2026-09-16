@@ -49,11 +49,14 @@ class Simulation:
         self.motion_elapsed = 0.
         self.actors = {}
         self.scripts = []
+        self.motions = []
         self.running = False
         self.clock = 0.
         self.gravity = -9.81
         self.friction = .8
         self.fixed = fixed
+        self.home_position = [0., 0., .20]
+        self.home_rotation = [0., 0., 0.]
         self.robot = None
         self.objects = []
         self.frames = []
@@ -119,7 +122,7 @@ class Simulation:
         temp = DATA / ('runtime-' + uuid.uuid4().hex + '.urdf')
         temp.write_text(ET.tostring(tree, encoding='unicode'))
         try:
-            new = p.loadURDF(str(temp), [0, 0, .20], useFixedBase=self.fixed,
+            new = p.loadURDF(str(temp), self.home_position, p.getQuaternionFromEuler(self.home_rotation), useFixedBase=self.fixed,
                              flags=p.URDF_USE_SELF_COLLISION | p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT,
                              physicsClientId=self.client)
         finally:
@@ -254,7 +257,7 @@ class Simulation:
     def reset(self):
         self.running = self.playing = False
         self.clock = self.playhead = 0.
-        p.resetBasePositionAndOrientation(self.robot, [0, 0, .20], [0, 0, 0, 1], physicsClientId=self.client)
+        p.resetBasePositionAndOrientation(self.robot, self.home_position, p.getQuaternionFromEuler(self.home_rotation), physicsClientId=self.client)
         p.resetBaseVelocity(self.robot, [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
         self.pose(self.sample(0) if self.frames else self.targets)
         for obj in self.objects:
@@ -265,6 +268,15 @@ class Simulation:
             p.resetBaseVelocity(actor.robot, [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
             actor.running = False
             actor.pose({j['name']: 0 for j in actor.joints})
+
+    def set_robot_transform(self, position, rotation):
+        position = vector(' '.join(map(str, position)))
+        rotation = vector(' '.join(map(str, rotation)))
+        if any(abs(value) > 100 for value in position) or any(abs(value) > math.tau * 4 for value in rotation):
+            raise ValueError('Robot transform is outside the supported workspace')
+        self.home_position, self.home_rotation = position, rotation
+        p.resetBasePositionAndOrientation(self.robot, position, p.getQuaternionFromEuler(rotation), physicsClientId=self.client)
+        p.resetBaseVelocity(self.robot, [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
 
     def add_actor(self, definition):
         directory = (ROOT / definition['directory'].lstrip('/')).resolve()
@@ -356,4 +368,6 @@ class Simulation:
                 'frames': self.frames, 'mapping': self.mapping, 'fixed': self.fixed, 'gravity': self.gravity,
                 'friction': self.friction, 'targets': self.targets, 'physics_hz': self.physics_hz,
                 'motion_hz': self.motion_hz, 'direction': self.direction,
-                'actors': [a.actor_definition(True) for a in self.actors.values()], 'scripts': self.scripts}
+                'robot_position': self.home_position, 'robot_rotation': self.home_rotation,
+                'actors': [a.actor_definition(True) for a in self.actors.values()], 'scripts': self.scripts,
+                'motions': self.motions}

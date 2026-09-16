@@ -89,7 +89,9 @@ class ScriptRunner:
             (directory / f['name']).write_text(f['source'], encoding='utf-8')
         with self.sim.lock:
             self.sim.playing = False
-            self.sim.running = bool(physics)
+            # Starting a kinematic script must not pause a world the user already
+            # started. The checkbox can enable physics, but never disables it.
+            self.sim.running = self.sim.running or bool(physics)
         with self.lock:
             self.jobs = {}
             self.logs.clear()

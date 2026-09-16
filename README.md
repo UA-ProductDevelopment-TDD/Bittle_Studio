@@ -12,7 +12,7 @@ For another computer, install Python 3.11 and Node.js, then run `setup.cmd` once
 
 1. Use **Pose** to adjust the eight joints. Choose time `0` and **Add keyframe**.
 2. Change time to `2`, choose another pose, and add a second keyframe. **Play motion** previews the transition. Click a frame to select it; saving at the same time replaces it. Smooth and linear interpolation are available.
-3. Add a box, ramp, sphere, or steps. Select it in the scene or viewport, then edit its position, rotation, dimensions, mass and friction. Drag the viewport transform arrows to move an object while physics is paused.
+3. Add a box, ramp, sphere, or steps. Select it in the scene or viewport, then edit its position, rotation, dimensions, mass and friction. Objects and the main Bittle can be moved with the viewport transform arrows while physics is paused. Select Bittle and choose **Move XYZ** or **Rotate XYZ**; its placement becomes the position used by Reset.
 4. **Run physics** enables gravity, collision response and joint motors. Play the timeline while physics runs to test motor-driven motion. **Pin robot base** is useful for bench tests. **Reset** resets body velocities and obstacle transforms, and returns to the first keyframe when present.
 5. **Save project** downloads JSON with the URDF, object definitions, animation, physics settings and servo mapping. **Open project** restores it. Imported mesh files remain under `data/`; project JSON is not a portable asset bundle. Keep `data/` and `assets/` alongside the application and back them up with your saved projects.
 
@@ -43,9 +43,21 @@ Click **Bluetooth** in the header. The panel supports the same Petoi connection 
 - **Bluetooth / USB serial** opens a browser-selected serial port at 115200 baud. Pair a classic Bluetooth module in Windows first, then choose its outgoing COM port.
 - **Test mode** exercises the complete playback path and logs packets without sending anything to a robot.
 
-Verify all servo indexes, directions and offsets in **Export motion** before using hardware playback. The hardware panel can send the displayed pose, play a behavior once, or repeat a gait until **Stop motion** is pressed. Stop cancels scheduled frames immediately and requests `kbalance`. Motion frames use the binary simultaneous `I` packet (`I`, signed index/angle bytes, `~`), which fits eight mapped joints in a single 18-byte BLE write. The selected Hz controls target scheduling; the actual rate can be lower when Bluetooth or firmware cannot accept writes fast enough.
+Verify all servo indexes, directions and offsets in **Export motion** before using hardware playback. The hardware panel can upload the displayed pose, play a behavior once, or repeat a gait until **Stop** is pressed. Stop requests `kbalance`.
+
+Studio converts the timeline to an OpenCat firmware skill and uploads it with the binary `K` command. The first run transfers and executes the complete skill; the firmware stores it in its last-skill slot. Repeating the unchanged motion sends only `T`, avoiding continuous Bluetooth frame traffic and its resulting jitter. OpenCat exposes this uploaded slot as `T`, so the friendly name remains in Studio rather than becoming a permanent firmware command. Firmware skills are limited to 120 interpolated frames and at most 20 Hz. Long timelines are resampled to fit; shorten the motion or increase its speed if it cannot fit. Uploading another custom motion replaces the robot's last-skill slot.
 
 Web Bluetooth and Web Serial require a compatible Chromium browser such as Chrome or Edge and a local secure context (`http://127.0.0.1` is allowed). The connection picker always requires a user click. Bittle Studio does not reconnect or move the robot on startup.
+
+### Developer mode, functions and voice
+
+The Bluetooth dialog now has three tabs that share one BLE/serial connection:
+
+- **Connection** contains direct timeline playback and **Developer mode**. Developer mode is selected by default. When the connection opens, Studio sends `gb` to turn off the firmware's balance/gyro assistance and blocks background voice actions. Explicit timeline playback, library buttons and terminal commands remain available. Turning developer mode off sends `gB` to restore balance assistance. Disconnecting leaves the checkbox ready for the next connection. The activity log distinguishes the first `K` upload from instant `T` replays.
+- **Functions** includes the Petoi posture, trick and gait catalog used by Bittle AI Voice. A gait keeps running in firmware until **Stop** sends `kbalance`. **My Studio functions** saves a copy of the current timeline with its pose/behavior/gait type, Hz, speed and order. Saved functions are included in autosave and project JSON; they can be loaded back into the editor, sent directly, or deleted.
+- **Voice** adds the optional Bobby Realtime voice companion from the merged workflow. Enter an OpenAI API key once per server run. The key is kept only in server memory and the browser audio connection uses WebRTC. Voice can talk without a robot, but physical actions require the shared hardware connection and are blocked whenever developer mode is active. Starting voice requires internet access and may incur OpenAI API usage charges.
+
+Use **Test mode** to verify the developer-state commands, built-in skills, saved functions and voice tool routing before connecting a physical Bittle. The activity log should show `gb` when developer mode starts, `gB` when it ends, and `TEST` for every command that would have been sent.
 
 References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial protocol](https://docs.petoi.com/apis/serial-protocol), [skill data format](https://docs.petoi.com/applications/skill-creation). Inspiration: [Petoi Bittle X simulator](https://bittlex-sim.petoi.com/) and [Bittle AI voice](https://github.com/UA-ProductDevelopment-TDD/Bittle_AI_voice).
 
@@ -63,17 +75,19 @@ References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial 
 ## Development
 
 - `engine.py`: Bullet world, URDF loading/diagnostics, collision objects, motor control, interpolation and state.
-- `server.py`: local API, import pipeline, project serialization and Python export.
+- `server.py`: local API, import pipeline, project serialization, saved function library, voice session endpoint and Python export.
 - `web/`: viewport, scene editor, timeline and inspector; no build step.
 - `tests/test_workbench.py`: end-to-end physics and API checks.
 
-Run `.venv/Scripts/python.exe -m unittest discover -s tests -v` and `node --check web/app.js`.
+Run `.venv/Scripts/python.exe -m unittest discover -s tests -v` and `node --check web/app.js && node --check web/hardware.js && node --check web/voice.js`.
 
 The built-in Python panel supports controllers directly (see below). External controllers can also use the API: `GET /api/model`, `GET /api/state`, `POST /api/command` with `{"action":"pose","pose":{"left-front-shoulder-joint":20}}`. Start dynamics with `{"action":"run","value":true}`. Stop timeline playback before sending external controller targets. Angles are degrees at the API boundary; transforms use metres and xyzw quaternions.
 
 ## Asset attribution
 
 The bundled robot was copied from the user's Bittle URDF directory. Its original README and GPL license are preserved as `assets/bittle/SOURCE.md` and `assets/bittle/LICENSE`. The upstream README attributes meshes to a third-party reverse-engineered GrabCAD design; inspect those terms before redistribution. Three.js and other dependencies retain their own licenses.
+
+The Petoi function catalog and connection protocol integration are adapted from the linked [UA Product Development Bittle AI Voice project](https://github.com/UA-ProductDevelopment-TDD/Bittle_AI_voice). Review that repository's license and the upstream Petoi firmware terms before redistribution.
 
 
 ## Python workspace and motion timing
@@ -85,7 +99,7 @@ Open **Python code** in the header. The viewport remains above the editor.
 - **Timeline → Python** creates the actual exported source in the editor. **Test this Python in simulation** in the export dialog does the same with that dialog's settings and mapping. The resulting source is an editable file, not a separate timeline approximation.
 - Create files with **+ File**, or import one or several `.py` files. Rename them in the filename field. Import helper modules normally, e.g. `from helper import gait`. Uncheck helpers so they are not launched as entry points.
 - Pick a **Target** for each entry point: the main Bittle, an additional URDF robot, or a scene object. **Run file** starts only the selected file. **Run checked** starts up to eight files together, on different targets. Only one process per target can run at once; compose same-target behaviours through imports. Each process has its own module globals.
-- **Physics** chooses motor-driven dynamics versus direct pose preview. Normal `time.sleep`, `time.monotonic`, and `time.perf_counter` use the simulation clock in the runner, so a slow simulation does not cause wall-clock scheduling to skip ahead. Unsupported firmware APIs fail explicitly.
+- **Enable physics** starts motor-driven dynamics if it is currently paused. Starting Python without the checkbox no longer pauses an already-running world. Normal `time.sleep`, `time.monotonic`, and `time.perf_counter` use the simulation clock in the runner, so a slow simulation does not cause wall-clock scheduling to skip ahead. Unsupported firmware APIs fail explicitly.
 - The console shows output, tracebacks, completion and timeout status. **Stop all** kills the runner processes and pauses physics. Reset does the same before resetting the world. Run limit is adjustable from 1 to 3600 wall-clock seconds. Changing a model/world or timeline while scripts run is rejected until Stop.
 - The installed app checkpoints the complete current project when Python files are saved (including automatic saves after editing), and restores that checkpoint on the next launch. No code auto-runs on startup. Continue using **Save project** to create named, portable JSON backups; mesh assets still require the accompanying `assets/` and `data/` folders. Saved checkpoints are in `data/studio-session.json`.
 

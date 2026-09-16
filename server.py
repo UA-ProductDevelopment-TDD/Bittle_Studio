@@ -2,6 +2,7 @@
 import io
 import json
 import math
+import os
 import threading
 import uuid
 import zipfile
@@ -10,19 +11,65 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pybullet as p
+import httpx
 import trimesh
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from engine import DATA, ROOT, Simulation, asset_path, asset_url
-from motion_export import build_motion, python_motion
+from engine import DATA, ROOT, Simulation, asset_path, asset_url, vector
+from motion_export import build_motion, firmware_skill, python_motion
 from scripting import ScriptRunner, validate_scripts
 
 sim = None
 runner = None
 AUTOSAVE = False  # Enabled by the desktop entry point; tests use isolated in-memory worlds.
+voice_api_key = os.environ.get('OPENAI_API_KEY', '')
+VOICE_MODEL = os.environ.get('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1')
+
+
+def validate_motions(items, world=None):
+    world = world or sim
+    if not isinstance(items, list) or len(items) > 100:
+        raise ValueError('Motion library must be a list of at most 100 motions')
+    result = []
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError('Invalid saved motion')
+        item = dict(raw)
+        item['id'] = str(item.get('id') or uuid.uuid4().hex)[:64]
+        item['name'] = str(item.get('name', '')).strip()[:80]
+        if not item['name']:
+            raise ValueError('Every saved motion needs a name')
+        item['motion_type'] = item.get('motion_type', 'behavior')
+        if item['motion_type'] not in ('pose', 'behavior', 'gait'):
+            raise ValueError('Motion type must be pose, behavior or gait')
+        item['hz'] = float(item.get('hz', 50))
+        item['speed'] = float(item.get('speed', 1))
+        item['direction'] = item.get('direction', 'forward')
+        if not 1 <= item['hz'] <= 240 or item['speed'] not in (.25, .5, 1, 2):
+            raise ValueError('Invalid saved motion speed or Hz')
+        if item['direction'] not in ('forward', 'reverse'):
+            raise ValueError('Invalid saved motion direction')
+        # Use the same joint-limit validation as the timeline.
+        original = world.frames
+        try:
+            world.set_frames(item.get('frames', []))
+            item['frames'] = world.frames
+        finally:
+            world.frames = original
+        source_pose = item.get('pose') or (item['frames'][-1]['pose'] if item['frames'] else world.targets)
+        item['pose'] = {}
+        for joint in world.joints:
+            value = float(source_pose.get(joint['name'], 0))
+            if not math.isfinite(value) or not joint['lower'] - .01 <= value <= joint['upper'] + .01:
+                raise ValueError('Saved pose exceeds joint limits: ' + joint['name'])
+            item['pose'][joint['name']] = value
+        result.append(item)
+    if len({item['id'] for item in result}) != len(result):
+        raise ValueError('Saved motion IDs must be unique')
+    return result
 
 
 def checkpoint():
@@ -239,7 +286,7 @@ async def import_asset(file: UploadFile = File(...), mode: str = 'replace'):
 def get_project():
     with sim.lock:
         return {'format': 'bittle-studio', 'version': 1, 'xml': sim.xml, 'directory': asset_url(sim.directory / 'placeholder').rsplit('/', 1)[0],
-                **{k: v for k, v in sim.model().items() if k in ('objects', 'frames', 'mapping', 'fixed', 'gravity', 'friction', 'targets', 'physics_hz', 'motion_hz', 'direction', 'scripts')},
+                **{k: v for k, v in sim.model().items() if k in ('objects', 'frames', 'mapping', 'fixed', 'gravity', 'friction', 'targets', 'physics_hz', 'motion_hz', 'direction', 'scripts', 'motions', 'robot_position', 'robot_rotation')},
                 'actors': [a.actor_definition() for a in sim.actors.values()]}
 
 
@@ -252,6 +299,8 @@ def load_project(body: dict):
     candidate = Simulation()
     try:
         candidate.fixed = bool(body.get('fixed', False))
+        candidate.home_position = vector(' '.join(map(str, body.get('robot_position', [0, 0, .2]))))
+        candidate.home_rotation = vector(' '.join(map(str, body.get('robot_rotation', [0, 0, 0]))))
         directory = (ROOT / body['directory'].lstrip('/')).resolve()
         asset_url(directory / 'placeholder')
         candidate.load_robot(body['xml'], directory)
@@ -259,6 +308,7 @@ def load_project(body: dict):
         candidate.pose(body.get('targets', {}))
         candidate.mapping = body.get('mapping', candidate.mapping)
         candidate.scripts = validate_scripts(body.get('scripts', []))
+        candidate.motions = validate_motions(body.get('motions', []), candidate)
         candidate.configure_rates(body.get('physics_hz', 240), body.get('motion_hz', 50), body.get('direction', 'forward'))
         for definition in body.get('actors', []):
             candidate.add_actor(definition)
@@ -307,6 +357,149 @@ def motion_samples(body: dict):
         sim.mapping = mapping
         checkpoint()
         return {'samples': samples, 'metadata': metadata}
+
+
+@app.post('/api/motion-skill')
+def motion_skill(body: dict):
+    with sim.lock:
+        skill, mapping, metadata = firmware_skill(sim, body)
+        sim.mapping = mapping
+        checkpoint()
+        return {'skill': skill, 'metadata': metadata}
+
+
+@app.post('/api/robot-transform')
+def robot_transform(body: dict):
+    runner.ensure_idle()
+    with sim.lock:
+        if sim.running:
+            raise ValueError('Pause physics before moving the robot')
+        sim.set_robot_transform(body['position'], body['rotation'])
+        checkpoint()
+        return sim.state()
+
+
+@app.get('/api/motions')
+def motions():
+    with sim.lock:
+        return {'motions': sim.motions}
+
+
+@app.post('/api/motions')
+def save_motion(body: dict):
+    with sim.lock:
+        frames = sim.frames or [{'time': 0, 'pose': sim.targets.copy(), 'easing': 'smooth'}]
+        item = {**body, 'id': uuid.uuid4().hex, 'frames': frames, 'pose': sim.targets.copy()}
+        sim.motions = validate_motions([*sim.motions, item])
+        checkpoint()
+        return sim.motions[-1]
+
+
+@app.delete('/api/motions/{motion_id}')
+def delete_motion(motion_id: str):
+    with sim.lock:
+        before = len(sim.motions)
+        sim.motions = [item for item in sim.motions if item['id'] != motion_id]
+        if len(sim.motions) == before:
+            raise ValueError('Saved motion not found')
+        checkpoint()
+        return {'ok': True}
+
+
+@app.post('/api/motions/{motion_id}/load')
+def load_motion(motion_id: str):
+    runner.ensure_idle()
+    with sim.lock:
+        item = next((item for item in sim.motions if item['id'] == motion_id), None)
+        if item is None:
+            raise ValueError('Saved motion not found')
+        sim.set_frames(item['frames'])
+        checkpoint()
+        return {'frames': sim.frames, 'motion': item}
+
+
+@app.post('/api/motions/{motion_id}/samples')
+def saved_motion_samples(motion_id: str, body: dict):
+    with sim.lock:
+        item = next((item for item in sim.motions if item['id'] == motion_id), None)
+        if item is None:
+            raise ValueError('Saved motion not found')
+        original, original_targets = sim.frames, sim.targets
+        try:
+            sim.set_frames(item['frames'])
+            sim.targets = item['pose'].copy()
+            request = {**item, **body}
+            samples, mapping, metadata = build_motion(sim, request, hardware=True)
+            sim.mapping = mapping
+        finally:
+            sim.frames = original
+            sim.targets = original_targets
+        checkpoint()
+        return {'samples': samples, 'metadata': metadata}
+
+
+@app.post('/api/motions/{motion_id}/skill')
+def saved_motion_skill(motion_id: str, body: dict):
+    with sim.lock:
+        item = next((item for item in sim.motions if item['id'] == motion_id), None)
+        if item is None:
+            raise ValueError('Saved motion not found')
+        original, original_targets = sim.frames, sim.targets
+        try:
+            sim.set_frames(item['frames'])
+            sim.targets = item['pose'].copy()
+            skill, mapping, metadata = firmware_skill(sim, {**item, **body})
+            sim.mapping = mapping
+        finally:
+            sim.frames, sim.targets = original, original_targets
+        checkpoint()
+        return {'skill': skill, 'metadata': metadata}
+
+
+@app.get('/api/voice/config')
+def voice_config():
+    return {'configured': bool(voice_api_key), 'model': VOICE_MODEL}
+
+
+@app.post('/api/voice/key')
+def set_voice_key(body: dict):
+    global voice_api_key
+    key = str(body.get('key', '')).strip()
+    if not key.startswith('sk-') or len(key) < 13:
+        raise ValueError('Enter a valid OpenAI API key')
+    voice_api_key = key
+    return {'configured': True}
+
+
+@app.delete('/api/voice/key')
+def remove_voice_key():
+    global voice_api_key
+    voice_api_key = ''
+    return {'configured': False}
+
+
+@app.post('/api/voice/session')
+async def voice_session(request: Request):
+    if not voice_api_key:
+        raise HTTPException(503, 'Set an OpenAI API key first')
+    sdp = (await request.body()).decode('utf-8')
+    if not sdp.startswith('v=0') or len(sdp) > 65536:
+        raise ValueError('Invalid audio connection')
+    from voice_tools import PERSONALITY, TOOLS
+    session = {'type': 'realtime', 'model': VOICE_MODEL, 'instructions': PERSONALITY,
+               'tools': TOOLS, 'tool_choice': 'auto', 'parallel_tool_calls': False,
+               'output_modalities': ['audio'],
+               'audio': {'input': {'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'en'},
+                                    'turn_detection': {'type': 'semantic_vad', 'eagerness': 'medium', 'create_response': True, 'interrupt_response': True}},
+                         'output': {'voice': 'cedar'}}}
+    files = {'sdp': (None, sdp), 'session': (None, json.dumps(session))}
+    async with httpx.AsyncClient(timeout=30) as client:
+        upstream = await client.post('https://api.openai.com/v1/realtime/calls',
+                                     headers={'Authorization': 'Bearer ' + voice_api_key}, files=files)
+    if upstream.status_code >= 400:
+        message = 'The API key is invalid' if upstream.status_code == 401 else 'OpenAI could not start the voice session'
+        raise HTTPException(upstream.status_code if upstream.status_code in (401, 429) else 502, message)
+    return Response(upstream.text, media_type='application/sdp')
 
 
 @app.get('/api/scripts')

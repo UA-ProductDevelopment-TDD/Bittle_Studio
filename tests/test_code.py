@@ -6,7 +6,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 import server
-from motion_export import build_motion, python_motion
+from motion_export import build_motion, firmware_skill, python_motion
 
 
 class CodeWorkbenchTest(unittest.TestCase):
@@ -157,6 +157,73 @@ class CodeWorkbenchTest(unittest.TestCase):
         })
         self.assertEqual(samples.status_code, 200, samples.text)
         self.assertEqual(samples.json()['metadata']['samples'], 1)
+
+    def test_06_saved_motion_library_round_trip(self):
+        sim = server.sim
+        name = sim.joints[0]['name']
+        zero = {joint['name']: 0 for joint in sim.joints}
+        frames = [
+            {'time': 0, 'pose': zero, 'easing': 'linear'},
+            {'time': .2, 'pose': {**zero, name: 12}, 'easing': 'smooth'},
+        ]
+        self.assertEqual(self.c.post('/api/frames', json={'frames': frames}).status_code, 200)
+        saved = self.c.post('/api/motions', json={'name': 'Test wave', 'motion_type': 'behavior', 'hz': 25, 'speed': 1, 'direction': 'forward'})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        item = saved.json()
+        self.assertEqual(item['frames'], frames)
+        self.assertTrue(any(m['id'] == item['id'] for m in self.c.get('/api/motions').json()['motions']))
+        mapping = json.loads(json.dumps(sim.mapping))
+        for value in mapping.values():
+            value['verified'] = True
+        samples = self.c.post(f"/api/motions/{item['id']}/samples", json={'mapping': mapping})
+        self.assertEqual(samples.status_code, 200, samples.text)
+        self.assertEqual(samples.json()['metadata']['hz'], 25)
+        project = self.c.get('/api/project').json()
+        self.assertTrue(any(m['id'] == item['id'] for m in project['motions']))
+        self.assertEqual(self.c.delete(f"/api/motions/{item['id']}").status_code, 200)
+        self.assertFalse(any(m['id'] == item['id'] for m in self.c.get('/api/motions').json()['motions']))
+
+    def test_07_physics_persists_and_firmware_skill_is_compact(self):
+        sim = server.sim
+        name = sim.joints[0]['name']
+        zero = {joint['name']: 0 for joint in sim.joints}
+        self.c.post('/api/frames', json={'frames': [
+            {'time': 0, 'pose': zero, 'easing': 'linear'},
+            {'time': 10, 'pose': {**zero, name: 20}, 'easing': 'smooth'},
+        ]})
+        mapping = json.loads(json.dumps(sim.mapping))
+        for value in mapping.values():
+            value['verified'] = True
+        skill, _, metadata = firmware_skill(sim, {'mapping': mapping, 'motion_type': 'gait', 'hz': 100, 'speed': 1})
+        self.assertGreater(len(skill), 20)
+        self.assertGreaterEqual(skill[0], -120)
+        self.assertLess(skill[0], 0)
+        self.assertEqual(skill[6], -1)
+        self.assertEqual(metadata['recall_command'], 'T')
+        response = self.c.post('/api/motion-skill', json={'mapping': mapping, 'motion_type': 'behavior', 'hz': 100, 'speed': 1})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertLessEqual(abs(response.json()['skill'][0]), 120)
+
+        self.save([{'id': 'short', 'name': 'short.py', 'source': 'from bittle_sim import ctx\nctx.sleep(.05)'}])
+        self.c.post('/api/command', json={'action': 'run', 'value': True})
+        self.assertEqual(self.c.post('/api/scripts/run', json={'physics': False}).status_code, 200)
+        self.assertTrue(self.c.get('/api/state').json()['running'])
+        self.wait_finished()
+
+    def test_08_main_robot_transform_round_trip(self):
+        target = {'position': [.12, -.08, .31], 'rotation': [.1, -.2, .3]}
+        result = self.c.post('/api/robot-transform', json=target)
+        self.assertEqual(result.status_code, 200, result.text)
+        model = self.c.get('/api/model').json()
+        self.assertEqual(model['robot_position'], target['position'])
+        for actual, expected in zip(model['robot_rotation'], target['rotation']):
+            self.assertAlmostEqual(actual, expected)
+        project = self.c.get('/api/project').json()
+        self.assertEqual(project['robot_position'], target['position'])
+        self.c.post('/api/command', json={'action': 'reset'})
+        position = server.p.getBasePositionAndOrientation(server.sim.robot, physicsClientId=server.sim.client)[0]
+        self.assertAlmostEqual(position[0], target['position'][0], places=4)
+        self.c.post('/api/robot-transform', json={'position': [0, 0, .2], 'rotation': [0, 0, 0]})
 
 
 if __name__=='__main__':
