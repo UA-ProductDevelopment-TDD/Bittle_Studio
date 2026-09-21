@@ -7,9 +7,9 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const $ = id => document.getElementById(id);
-let model, state, selected = null, selectedFrame = null, frameList = [], mapping = {}, loading = false;
+let model, state, selected = null, selectedFrame = null, frameList = [], mapping = {}, loading = false, timelineTarget = 'main';
 let toastTimer, pendingPose = {}, poseTimer;
-let codePanel, hardwarePanel, selectedActor=null, mainSelected=true, gizmoTarget='robot', robotDrag=null;
+let codePanel, hardwarePanel, selectedActor=null, mainSelected=true, gizmoTarget='robot', robotDrag=null, editorTarget='main';
 const robotLinks = new Map(), objectMeshes = new Map(), meshCache = new Map();
 function toast(message, error = false) {
   const dialog=document.querySelector('dialog[open]');
@@ -23,6 +23,17 @@ async function api(url, data, method = 'POST') {
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response.text();
 }
 const command = (action, rest = {}) => api('/api/command', {action, ...rest});
+const robotCommand = (action, rest = {}) => command(action, {target: timelineTarget, ...rest});
+function timelineModel() {return timelineTarget === 'main' ? model : model?.actors?.find(actor => actor.id === timelineTarget);}
+function timelineState(value=state) {return timelineTarget === 'main' ? value : value?.actors?.[timelineTarget];}
+function setTimelineTarget(target) {
+  if(target !== 'main' && !model?.actors?.some(actor => actor.id === target)) target='main';
+  timelineTarget=target;const robot=timelineModel();if(!robot)return;
+  frameList=robot.frames||[];selectedFrame=null;pendingPose={};
+  $('timelineRobot').value=target;$('motionHz').value=robot.motion_hz||model.motion_hz;$('motionDirection').value=robot.direction||'forward';
+  $('mainPlacement').classList.toggle('hidden',target!=='main');$('jointTitle').textContent=(target==='main'?'Bittle':robot.name)+' joint angles';
+  buildJoints();timeline();
+}
 function on(id, action, event = 'click') { $(id).addEventListener(event, async e => {try {await action(e);} catch(error) {toast(error.message, true);} }); }
 function download(name, value, type = 'application/json') {
   const url = URL.createObjectURL(new Blob([typeof value === 'string' ? value : JSON.stringify(value, null, 2)], {type}));
@@ -36,10 +47,36 @@ function tab(name) {
 document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => tab(el.dataset.tab)));
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(el.dataset.close).close()));
 
+const panelDefaults={scene:true,inspector:true,timeline:true};
+function savedPanelLayout(){try{return JSON.parse(localStorage.getItem('bittle-workspace-panels')||'{}');}catch{return {};}}
+let panelVisibility={...panelDefaults,...savedPanelLayout()};
+function applyPanelLayout(){
+  const main=document.querySelector('main');
+  for(const name of Object.keys(panelDefaults)){
+    document.querySelector(`[data-workspace-panel="${name}"]`)?.classList.toggle('hidden',!panelVisibility[name]);
+    main.classList.toggle('hide-'+name,!panelVisibility[name]);
+    const item=document.querySelector(`[data-window="${name}"]`);if(item)item.textContent=(panelVisibility[name]?'✓ ':'')+(name==='scene'?'Stage':name[0].toUpperCase()+name.slice(1));
+  }
+  try{localStorage.setItem('bittle-workspace-panels',JSON.stringify(panelVisibility));}catch{/* Restricted browser storage must not prevent startup. */}
+  requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));
+}
+function setPanel(name,visible){panelVisibility[name]=visible;applyPanelLayout();}
+document.querySelectorAll('[data-hide-panel]').forEach(button=>button.addEventListener('click',()=>setPanel(button.dataset.hidePanel,false)));
+document.querySelectorAll('[data-window]').forEach(button=>button.addEventListener('click',()=>{
+  const name=button.dataset.window;
+  if(name==='code')codePanel?.show();else if(name==='robot')openRobotEditor();else if(name==='reset'){panelVisibility={...panelDefaults};applyPanelLayout();codePanel?.hide();}else setPanel(name,!panelVisibility[name]);
+  button.closest('details')?.removeAttribute('open');
+}));
+applyPanelLayout();
+
+function filterStage(){const query=$('stageSearch').value.trim().toLowerCase();document.querySelectorAll('.scene-list .scene-item').forEach(item=>item.classList.toggle('hidden',!item.textContent.toLowerCase().includes(query)));}
+$('stageSearch').addEventListener('input',filterStage);
+new MutationObserver(filterStage).observe(document.querySelector('.scene-list'),{childList:true,subtree:true});
+
 // Render link transforms from Bullet, rather than maintaining a separate visual-only robot.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
-const scene = new THREE.Scene(); scene.background = new THREE.Color('#293943');
-scene.fog = new THREE.Fog('#293943', 2.2, 6);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#55595b');
+scene.fog = new THREE.Fog('#55595b', 2.2, 6);
 const camera = new THREE.PerspectiveCamera(42, 1, .001, 30);
 camera.position.set(.40, .52, .31);
 const renderer = new THREE.WebGLRenderer({antialias: true});
@@ -52,7 +89,7 @@ const hemi = new THREE.HemisphereLight(0xe4f3ff, 0x697462, 2.1); scene.add(hemi)
 const sun = new THREE.DirectionalLight(0xffefd8, 3.4); sun.position.set(-.8, .7, 1.6); sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, {left:-1.5,right:1.5,top:1.5,bottom:-1.5,near:.01,far:5}); sun.shadow.bias=-.0001; sun.shadow.normalBias=.0004; scene.add(sun);
 const rim = new THREE.DirectionalLight(0x90bfff, 1.8); rim.position.set(.5,-.8,.6); scene.add(rim);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: '#354752', roughness: .92}));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: '#515557', roughness: .92}));
 floor.receiveShadow = true; floor.position.z = -.001; scene.add(floor);
 const grid = new THREE.GridHelper(8, 160, 0x80919c, 0x506571); grid.rotation.x = Math.PI / 2; grid.position.z = .0001;
 grid.material.transparent = true; grid.material.opacity = .42; scene.add(grid);
@@ -80,7 +117,7 @@ gizmo.addEventListener('mouseUp', async () => {
   } catch(e){toast(e.message,true);await refresh();}
 });
 const selectionBox = new THREE.BoxHelper(undefined, 0xc0e581); selectionBox.visible = false; scene.add(selectionBox);
-new ResizeObserver(() => {const w=$('viewport').clientWidth,h=$('viewport').clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe($('viewport'));
+new ResizeObserver(() => {const w=$('viewport').clientWidth,h=$('viewport').clientHeight;if(!w||!h)return;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe($('viewport'));
 function disposeGroup(group) { scene.remove(group); group.traverse(child => { if (child.isMesh) {child.geometry?.dispose(); (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => m?.dispose());} }); }
 async function loadMesh(url) {
   if (!meshCache.has(url)) meshCache.set(url, (async () => {
@@ -130,6 +167,7 @@ async function buildObjects() {
   renderObjectList(); if(selected && objectMeshes.has(selected)) selectObject(selected);
 }
 function renderObjectList() {
+  renderActors();
   $('objectList').replaceChildren();
   for(const o of model.objects) {const b=document.createElement('button');b.className='scene-item'+(selected===o.id?' selected':'');const icon=document.createElement('span');icon.textContent=o.type==='sphere'?'○':'◇';const text=document.createElement('div');text.textContent=o.name;const small=document.createElement('small');small.textContent=(o.mass===0?'Static':o.mass+' kg')+' · '+o.type;text.append(small);b.append(icon,text);b.onclick=()=>selectObject(o.id);$('objectList').append(b);}
 }
@@ -145,7 +183,7 @@ function selectObject(id) {
 }
 for(const kind of ['position','rotation','size']) for(let i=0;i<3;i++) {const l=document.createElement('label');l.textContent=['X','Y','Z'][i];const input=document.createElement('input');input.id=kind+i;input.type='number';input.step=kind==='rotation'?'1':'.01';input.required=true;if(kind==='size')input.min='.000001';l.append(input);$(kind+'Fields').append(l);}
 function syncRobotFields(){const p=robotHandle.position,r=robotHandle.rotation;[p.x,p.y,p.z].forEach((v,i)=>$('robotPosition'+i).value=v.toFixed(4));[r.x,r.y,r.z].forEach((v,i)=>$('robotRotation'+i).value=THREE.MathUtils.radToDeg(v).toFixed(2));}
-function selectMainRobot(){selectedActor=null;selected=null;mainSelected=true;gizmoTarget='robot';gizmo.detach();selectionBox.visible=false;tab('pose');$('selectRobot').classList.add('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='BITTLE';renderObjectList();if(!state?.running)gizmo.attach(robotHandle);syncRobotFields();}
+function selectMainRobot(){selectedActor=null;selected=null;mainSelected=true;gizmoTarget='robot';gizmo.detach();selectionBox.visible=false;setTimelineTarget('main');tab('pose');$('selectRobot').classList.add('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='BITTLE';renderObjectList();if(!state?.running)gizmo.attach(robotHandle);syncRobotFields();}
 on('selectRobot',selectMainRobot);
 on('moveRobot',()=>{selectMainRobot();gizmo.setMode('translate');});
 on('rotateRobot',()=>{selectMainRobot();gizmo.setMode('rotate');});
@@ -153,27 +191,39 @@ async function applyRobotPlacement(position,rotation){if(state?.running)throw ne
 on('applyRobotPlacement',()=>applyRobotPlacement([0,1,2].map(i=>Number($('robotPosition'+i).value)),[0,1,2].map(i=>THREE.MathUtils.degToRad(Number($('robotRotation'+i).value)))));
 on('resetRobotPlacement',()=>applyRobotPlacement([0,0,.2],[0,0,0]));
 const raycaster=new THREE.Raycaster();let down;
-renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
-renderer.domElement.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4||gizmo.dragging||gizmo.axis)return;const rect=renderer.domElement.getBoundingClientRect();raycaster.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),camera);const hit=raycaster.intersectObjects([...objectMeshes.values()],true)[0];if(hit)selectObject(hit.object.userData.objectId);});
+renderer.domElement.addEventListener('pointerdown',e=>down=e.button===0?[e.clientX,e.clientY]:null);
+renderer.domElement.addEventListener('pointercancel',()=>down=null);
+renderer.domElement.addEventListener('pointerup',e=>{
+  const start=down;down=null;
+  if(!start||e.button!==0||Math.hypot(e.clientX-start[0],e.clientY-start[1])>4||gizmo.dragging||gizmo.axis)return;
+  const rect=renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),camera);
+  const hit=raycaster.intersectObjects([...objectMeshes.values(),...robotLinks.values()],true)[0];
+  if(!hit)return;
+  if(hit.object.userData.objectId){selectObject(hit.object.userData.objectId);return;}
+  let link=hit.object;while(link&&!link.userData.robot)link=link.parent;
+  if(link?.userData.actor==='main')selectMainRobot();else if(link)selectActor(link.userData.actor);
+});
 function focusRobot(view='perspective') {const box=new THREE.Box3();robotLinks.forEach(g=>{if(g.userData.actor===(selectedActor||'main'))box.expandByObject(g);});const center=box.isEmpty()?new THREE.Vector3(0,0,.12):box.getCenter(new THREE.Vector3());controls.target.copy(center);const distance=Math.max(.35,box.getSize(new THREE.Vector3()).length()*1.7);camera.position.copy(center).add(view==='top'?new THREE.Vector3(.0001,0,distance):view==='side'?new THREE.Vector3(distance,0,.02):new THREE.Vector3(distance*.7,distance*.95,distance*.6));controls.update();}
 on('focus',()=>focusRobot());on('topView',()=>focusRobot('top'));on('sideView',()=>focusRobot('side'));on('grid',()=>{$('grid').setAttribute('aria-pressed',String(grid.visible=!grid.visible));});
 function render() {requestAnimationFrame(render);controls.update();if(selected&&selectionBox.visible)selectionBox.update();renderer.render(scene,camera);} render();
 
 function buildJoints() {
+  const robot=timelineModel();if(!robot)return;
   $('jointControls').replaceChildren();
-  for(const j of model.joints) {
+  for(const j of robot.joints) {
     const row=document.createElement('div');row.className='joint';const head=document.createElement('div');head.className='joint-head';const l=document.createElement('label');l.textContent=label(j.name);l.htmlFor='joint-'+j.id;
     const number=document.createElement('input');number.type='number';number.min=j.lower.toFixed(2);number.max=j.upper.toFixed(2);number.step='.1';number.id='angle-'+j.id;number.setAttribute('aria-label',label(j.name)+' degrees');
-    const slider=document.createElement('input');slider.type='range';slider.min=j.lower;slider.max=j.upper;slider.step='.1';slider.id='joint-'+j.id;slider.value=number.value=model.targets[j.name]??0;
+    const slider=document.createElement('input');slider.type='range';slider.min=j.lower;slider.max=j.upper;slider.step='.1';slider.id='joint-'+j.id;slider.value=number.value=robot.targets[j.name]??0;
     const change=el=>{const value=Number(el.value);if(!Number.isFinite(value))return;const clamped=Math.max(j.lower,Math.min(j.upper,value));number.value=clamped.toFixed(1);slider.value=clamped;pendingPose[j.name]=clamped;clearTimeout(poseTimer);poseTimer=setTimeout(flushPose,40);};
     slider.oninput=()=>change(slider);number.onchange=()=>change(number);head.append(l,number);
     const limits=document.createElement('div');limits.className='joint-limits';limits.innerHTML=`<span>${Math.round(j.lower)}°</span><span>${Math.round(j.upper)}°</span>`;row.append(head,slider,limits);$('jointControls').append(row);
   }
 }
-async function flushPose(){if(!Object.keys(pendingPose).length)return;const pose=pendingPose;pendingPose={};try{await command('pose',{pose});}catch(e){toast(e.message,true);}}
-function updatePoseInputs(pose) {for(const j of model.joints) {if(pendingPose[j.name]!==undefined)continue;const slider=$('joint-'+j.id),num=$('angle-'+j.id);if(document.activeElement!==slider&&document.activeElement!==num){slider.value=pose[j.name];num.value=Number(pose[j.name]).toFixed(1);}}}
-function crouchPose(){return Object.fromEntries(model.joints.map(j=>[j.name,/knee/.test(j.name)?45:-35]));}
-on('zeroPose',()=>command('pose',{pose:Object.fromEntries(model.joints.map(j=>[j.name,0]))}));on('crouchPose',()=>command('pose',{pose:crouchPose()}));
+async function flushPose(){if(!Object.keys(pendingPose).length)return;const pose=pendingPose;pendingPose={};try{await robotCommand('pose',{pose});}catch(e){toast(e.message,true);}}
+function updatePoseInputs(pose) {for(const j of timelineModel()?.joints||[]) {if(pendingPose[j.name]!==undefined)continue;const slider=$('joint-'+j.id),num=$('angle-'+j.id);if(slider&&num&&document.activeElement!==slider&&document.activeElement!==num){slider.value=pose[j.name];num.value=Number(pose[j.name]).toFixed(1);}}}
+function crouchPose(){return Object.fromEntries((timelineModel()?.joints||[]).map(j=>[j.name,/knee/.test(j.name)?45:-35]));}
+on('zeroPose',()=>robotCommand('pose',{pose:Object.fromEntries(timelineModel().joints.map(j=>[j.name,0]))}));on('crouchPose',()=>robotCommand('pose',{pose:crouchPose()}));
 on('run',async()=>{await flushPose();await command('run',{value:!state.running});});on('reset',async()=>{await command('reset');$('frameTime').value=0;});
 on('applyPhysics',async()=>{await command('settings',{gravity:Number($('gravity').value),friction:Number($('friction').value),fixed:$('fixed').checked,physics_hz:Number($('physicsHz').value),motion_hz:Number($('motionHz').value),direction:$('motionDirection').value});await refresh();toast('Physics settings applied.');});
 on('applyUrdf',async()=>{await api('/api/urdf',{xml:$('urdf').value});await refresh();toast('URDF loaded. Timeline reset for the new model.');});on('downloadUrdf',()=>download('bittle.urdf',$('urdf').value,'application/xml'));
@@ -189,45 +239,78 @@ on('deleteObject',async()=>{await api('/api/objects/'+selected,{},'DELETE');mode
 on('import',()=>$('assetFile').click());
 on('assetFile',async()=>{const file=$('assetFile').files[0];if(!file)return;const form=new FormData();form.append('file',file);$('import').disabled=true;try{const response=await fetch('/api/import?mode='+$('robotImportMode').value,{method:'POST',body:form});const result=await response.json();if(!response.ok)throw new Error(result.detail);if(result.kind==='robot'||result.kind==='actor'){await refresh();if(result.kind==='actor')selectActor(result.id);focusRobot();toast('Robot imported.');}else{await addObject({type:'mesh',name:result.name,url:result.url,size:[1,1,1],position:[.25,0,0],color:'#8fa6b2'});toast(result.note);}}finally{$('assetFile').value='';$('import').disabled=false;}},'change');
 
-function timeline(){const end=Math.max(5,frameList.at(-1)?.time??0);$('scrubber').max=end;$('frameCount').textContent=frameList.length+' keyframes';$('ruler').replaceChildren();for(let i=0;i<=5;i++){const s=document.createElement('span');s.textContent=(i*end/5).toFixed(1)+' s';$('ruler').append(s);}$('keyframes').replaceChildren();if(!frameList.length){const p=document.createElement('p');p.textContent='Pose the joints, choose a time, then add a keyframe.';$('keyframes').append(p);}frameList.forEach(f=>{const b=document.createElement('button');b.className='frame'+(selectedFrame===f.time?' selected':'');b.textContent=f.time.toFixed(2)+' s';b.onclick=async()=>{selectedFrame=f.time;$('frameTime').value=f.time;$('easing').value=f.easing;await command('seek',{time:f.time});timeline();};$('keyframes').append(b);});}
-async function saveFrames(){const result=await api('/api/frames',{frames:frameList});frameList=result.frames;timeline();}
-on('keyframe',async()=>{await flushPose();const s=await api('/api/state');const t=Number($('frameTime').value);const next=frameList.filter(f=>f.time!==t);next.push({time:t,pose:structuredClone(s.targets),easing:$('easing').value});const result=await api('/api/frames',{frames:next});frameList=result.frames;selectedFrame=t;timeline();toast('Keyframe saved at '+t+' s.');});
+function timeline(){const end=Math.max(5,frameList.at(-1)?.time??0);$('scrubber').max=end;$('frameCount').textContent=(timelineModel()?.name||'Bittle')+' · '+frameList.length+' keyframes';$('ruler').replaceChildren();for(let i=0;i<=5;i++){const s=document.createElement('span');s.textContent=(i*end/5).toFixed(1)+' s';$('ruler').append(s);}$('keyframes').replaceChildren();if(!frameList.length){const p=document.createElement('p');p.textContent='Pose the joints, choose a time, then add a keyframe.';$('keyframes').append(p);}frameList.forEach(f=>{const b=document.createElement('button');b.className='frame'+(selectedFrame===f.time?' selected':'');b.textContent=f.time.toFixed(2)+' s';b.onclick=async()=>{selectedFrame=f.time;$('frameTime').value=f.time;$('easing').value=f.easing;await robotCommand('seek',{time:f.time});timeline();};$('keyframes').append(b);});}
+async function saveFrames(){const result=await api('/api/frames',{target:timelineTarget,frames:frameList});frameList=result.frames;timelineModel().frames=frameList;timeline();}
+on('keyframe',async()=>{await flushPose();const s=timelineState(await api('/api/state'));const t=Number($('frameTime').value);const next=frameList.filter(f=>f.time!==t);next.push({time:t,pose:structuredClone(s.targets),easing:$('easing').value});const result=await api('/api/frames',{target:timelineTarget,frames:next});frameList=result.frames;timelineModel().frames=frameList;selectedFrame=t;timeline();toast('Keyframe saved at '+t+' s.');});
 on('removeFrame',async()=>{if(selectedFrame===null)throw new Error('Select a keyframe first');frameList=frameList.filter(f=>f.time!==selectedFrame);selectedFrame=null;await saveFrames();});
-on('demoMotion',async()=>{const zero=Object.fromEntries(model.joints.map(j=>[j.name,0]));frameList=[{time:0,pose:zero,easing:'smooth'},{time:1.5,pose:crouchPose(),easing:'smooth'},{time:3,pose:zero,easing:'smooth'}];await saveFrames();await command('seek',{time:0});toast('Crouch example loaded. This is a pose study, not a validated gait.');});
-on('play',async()=>{if(frameList.length<2)throw new Error('Add at least two keyframes to play motion');await flushPose();await command('play',{value:!state.playing,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value});});
-on('speed',()=>command('play',{value:state.playing,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value}),'change');
-on('loop',()=>command('play',{value:state.playing,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value}),'change');
-let seekTimer;on('scrubber',()=>{const t=Number($('scrubber').value);$('frameTime').value=t.toFixed(2);clearTimeout(seekTimer);seekTimer=setTimeout(()=>command('seek',{time:t}).catch(e=>toast(e.message,true)),25);},'input');
-on('frameTime',()=>command('seek',{time:Number($('frameTime').value)}),'change');
+on('demoMotion',async()=>{const zero=Object.fromEntries(timelineModel().joints.map(j=>[j.name,0]));frameList=[{time:0,pose:zero,easing:'smooth'},{time:1.5,pose:crouchPose(),easing:'smooth'},{time:3,pose:zero,easing:'smooth'}];await saveFrames();await robotCommand('seek',{time:0});toast('Crouch example loaded. This is a pose study, not a validated gait.');});
+on('play',async()=>{if(frameList.length<2)throw new Error('Add at least two keyframes to play motion');await flushPose();await robotCommand('play',{value:!timelineState()?.playing,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value});});
+on('speed',()=>robotCommand('play',{value:timelineState()?.playing,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value}),'change');
+on('loop',()=>robotCommand('play',{value:timelineState()?.playing,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value}),'change');
+let seekTimer;on('scrubber',()=>{const t=Number($('scrubber').value),target=timelineTarget;$('frameTime').value=t.toFixed(2);clearTimeout(seekTimer);seekTimer=setTimeout(()=>command('seek',{target,time:t}).catch(e=>toast(e.message,true)),25);},'input');
+on('frameTime',()=>robotCommand('seek',{time:Number($('frameTime').value)}),'change');
 on('saveProject',async()=>{await codePanel?.save();await flushPose();download('bittle-experiment.json',await api('/api/project'));toast('Project saved. Keep this installation’s data folder with imported assets.');});
 on('openProject',()=>$('projectFile').click());on('projectFile',async()=>{const f=$('projectFile').files[0];if(!f)return;await api('/api/project',JSON.parse(await f.text()));await refresh();codePanel?.reload();focusRobot();$('projectFile').value='';toast('Project restored.');},'change');
 on('help',()=>$('helpDialog').showModal());
-on('export',()=>{$('exportHz').value=$('motionHz').value;$('exportDirection').value=$('motionDirection').value;mapping=structuredClone(model.mapping);$('mapping').replaceChildren();for(const j of model.joints){const m=mapping[j.name];const row=document.createElement('div');row.className='mapping-row';const name=document.createElement('span');name.textContent=label(j.name);const servo=document.createElement('input');servo.type='number';servo.min=0;servo.max=15;servo.value=m.servo;servo.setAttribute('aria-label',label(j.name)+' servo index');const sign=document.createElement('select');sign.innerHTML='<option value="1">+1</option><option value="-1">−1</option>';sign.value=m.sign;sign.setAttribute('aria-label',label(j.name)+' direction');const offset=document.createElement('input');offset.type='number';offset.value=m.offset;offset.setAttribute('aria-label',label(j.name)+' offset');const verified=document.createElement('input');verified.type='checkbox';verified.checked=m.verified;verified.setAttribute('aria-label',label(j.name)+' mapping verified');servo.onchange=()=>{m.servo=Number(servo.value);m.verified=verified.checked=false;};sign.onchange=()=>{m.sign=Number(sign.value);m.verified=verified.checked=false;};offset.onchange=()=>{m.offset=Number(offset.value);m.verified=verified.checked=false;};verified.onchange=()=>m.verified=verified.checked;row.append(name,servo,sign,offset,verified);$('mapping').append(row);}$('exportDialog').showModal();});
-const exportBody=()=>({mapping,motion_type:$('exportType').value,speed:Number($('exportSpeed').value),hz:Number($('exportHz').value),direction:$('exportDirection').value});
+on('export',()=>{const robot=timelineModel();$('exportHz').value=$('motionHz').value;$('exportDirection').value=$('motionDirection').value;mapping=structuredClone(robot.mapping);$('mapping').replaceChildren();for(const j of robot.joints){const m=mapping[j.name];const row=document.createElement('div');row.className='mapping-row';const name=document.createElement('span');name.textContent=label(j.name);const servo=document.createElement('input');servo.type='number';servo.min=0;servo.max=15;servo.value=m.servo;servo.setAttribute('aria-label',label(j.name)+' servo index');const sign=document.createElement('select');sign.innerHTML='<option value="1">+1</option><option value="-1">−1</option>';sign.value=m.sign;sign.setAttribute('aria-label',label(j.name)+' direction');const offset=document.createElement('input');offset.type='number';offset.value=m.offset;offset.setAttribute('aria-label',label(j.name)+' offset');const verified=document.createElement('input');verified.type='checkbox';verified.checked=m.verified;verified.setAttribute('aria-label',label(j.name)+' mapping verified');servo.onchange=()=>{m.servo=Number(servo.value);m.verified=verified.checked=false;};sign.onchange=()=>{m.sign=Number(sign.value);m.verified=verified.checked=false;};offset.onchange=()=>{m.offset=Number(offset.value);m.verified=verified.checked=false;};verified.onchange=()=>m.verified=verified.checked;row.append(name,servo,sign,offset,verified);$('mapping').append(row);}$('exportDialog').showModal();});
+const exportBody=()=>({target:timelineTarget,mapping,motion_type:$('exportType').value,speed:Number($('exportSpeed').value),hz:Number($('exportHz').value),direction:$('exportDirection').value});
 on('exportType',()=>{$('exportLoop').checked=$('exportType').value==='gait';},'change');
-on('downloadCode',async()=>{const code=await api('/api/export',exportBody());model.mapping=structuredClone(mapping);download('bittle_motion.py',code,'text/x-python');toast($('exportType').value==='gait'?'Python gait exported. It repeats until Ctrl+C.':'Python motion exported. Run without flags for a dry run.');});
-document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||document.querySelector('dialog[open]'))return;if(e.key.toLowerCase()==='f')focusRobot();if(e.code==='Space'){e.preventDefault();$('play').click();}});
+on('downloadCode',async()=>{const code=await api('/api/export',exportBody());timelineModel().mapping=structuredClone(mapping);download(label(timelineModel().name||'bittle')+'_motion.py',code,'text/x-python');toast($('exportType').value==='gait'?'Python gait exported. It repeats until Ctrl+C.':'Python motion exported. Run without flags for a dry run.');});
+document.addEventListener('keydown',e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('input,textarea,select,button,summary')||document.querySelector('dialog[open]'))return;if(e.key.toLowerCase()==='f')focusRobot();if(e.code==='Space'){e.preventDefault();$('play').click();}});
 
 on('openCode',()=>codePanel?.show());
 on('objectCode',()=>codePanel.forTarget(selected));
 on('actorCode',()=>codePanel.forTarget(selectedActor));
-on('testExport',async()=>{const result=await api('/api/motion-code',exportBody());model.mapping=structuredClone(mapping);$('exportDialog').close();await codePanel.addSource(result.source,'motion.py','main');toast(result.metadata.loop?'Gait Python is running-ready; use Stop all to end its loop.':'Exported Python is ready to run in simulation.');});
-on('playFromStart',async()=>{if(frameList.length<2)throw Error('Add at least two keyframes');await command('play',{value:true,from_start:true,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value});});
-for(const id of ['motionHz','motionDirection'])on(id,async()=>{await command('settings',{motion_hz:Number($('motionHz').value),direction:$('motionDirection').value});model.motion_hz=Number($('motionHz').value);model.direction=$('motionDirection').value;},'change');
+on('testExport',async()=>{const result=await api('/api/motion-code',exportBody());timelineModel().mapping=structuredClone(mapping);$('exportDialog').close();await codePanel.addSource(result.source,'motion.py',timelineTarget);toast(result.metadata.loop?'Gait Python is running-ready; use Stop all to end its loop.':'Exported Python is ready to run in simulation.');});
+on('playFromStart',async()=>{if(frameList.length<2)throw Error('Add at least two keyframes');await robotCommand('play',{value:true,from_start:true,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value});});
+for(const id of ['motionHz','motionDirection'])on(id,async()=>{await robotCommand('settings',{motion_hz:Number($('motionHz').value),direction:$('motionDirection').value});timelineModel().motion_hz=Number($('motionHz').value);timelineModel().direction=$('motionDirection').value;},'change');
 
 function renderActors(){
   $('actorList').replaceChildren();
   for(const actor of model.actors||[]){const button=document.createElement('button');button.className='scene-item'+(selectedActor===actor.id?' selected':'');const icon=document.createElement('span');icon.textContent='▧';const name=document.createElement('div');name.textContent=actor.name;const detail=document.createElement('small');detail.textContent='URDF · '+actor.joints.length+' joints';name.append(detail);button.append(icon,name);button.onclick=()=>selectActor(actor.id);$('actorList').append(button);}
 }
+function robotFor(target){return target==='main'?model:model?.actors?.find(actor=>actor.id===target);}
+function nextSensorName(robot){const used=new Set((robot.sensors||[]).map(sensor=>sensor.name));let index=1,name='Body IMU';while(used.has(name)){index+=1;name='Body IMU '+index;}return name;}
+function editorTab(name){document.querySelectorAll('[data-editor-tab]').forEach(button=>button.classList.toggle('selected',button.dataset.editorTab===name));document.querySelectorAll('.editor-section').forEach(section=>section.classList.toggle('hidden',section.id!=='editor-'+name));}
+document.querySelectorAll('[data-editor-tab]').forEach(button=>button.addEventListener('click',()=>editorTab(button.dataset.editorTab)));
+function buildSensors() {
+  const robot=robotFor(editorTarget);if(!robot)return;
+  const previous=$('sensorLink').value;
+  $('sensorLink').replaceChildren(...(robot.links||[]).map(link=>new Option(label(link),link)));
+  if(Array.from($('sensorLink').options).some(option=>option.value===previous))$('sensorLink').value=previous;
+  $('sensorList').replaceChildren();
+  if(!(robot.sensors||[]).length){const empty=document.createElement('div');empty.className='editor-empty';empty.textContent='No sensors yet. Choose a link above and add an IMU.';$('sensorList').append(empty);}
+  for(const sensor of robot.sensors||[]){const card=document.createElement('div');card.className='sensor-card';const head=document.createElement('header');const title=document.createElement('div');const strong=document.createElement('b');strong.textContent=sensor.name;const link=document.createElement('small');link.textContent='IMU · '+label(sensor.link);title.append(strong,link);const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';remove.onclick=async()=>{await api('/api/sensors/'+editorTarget+'/'+sensor.id,{},'DELETE');await refresh();buildRobotEditor();toast('Sensor removed from '+robot.name+'.');};head.append(title,remove);const values=document.createElement('small');values.id='sensor-value-'+sensor.id;values.className='sensor-readout';values.textContent='RPY 0°, 0°, 0° · gyro 0, 0, 0 rad/s';card.append(head,values);$('sensorList').append(card);}
+}
+function buildRobotEditor(){
+  const robot=robotFor(editorTarget);if(!robot)return;
+  $('editorRobot').value=editorTarget;$('editorRobotName').textContent=robot.name||'Bittle';$('editorUrdf').value=robot.xml;
+  $('sensorName').value=nextSensorName(robot);
+  $('robotStats').innerHTML=`<span><b>${(robot.links||[]).length}</b> links</span><span><b>${(robot.joints||[]).length}</b> joints</span><span><b>${(robot.sensors||[]).length}</b> sensors</span>`;
+  $('editorLinks').replaceChildren(...(robot.links||[]).map(name=>{const chip=document.createElement('span');chip.textContent=label(name);return chip;}));
+  $('editorJoints').replaceChildren(...(robot.joints||[]).map(joint=>{const row=document.createElement('div'),name=document.createElement('span'),limits=document.createElement('small');name.textContent=label(joint.name);limits.textContent=`${joint.lower.toFixed(1)}° … ${joint.upper.toFixed(1)}°`;row.append(name,limits);return row;}));
+  $('editorDiagnostics').replaceChildren(...(robot.warnings||[]).map(message=>{const p=document.createElement('p');p.textContent=message;return p;}));
+  buildSensors();
+}
+function syncRobotEditorTargets(){const current=editorTarget;$('editorRobot').replaceChildren(new Option('Bittle · main','main'),...(model?.actors||[]).map(actor=>new Option(actor.name,actor.id)));if(!robotFor(current))editorTarget='main';$('editorRobot').value=editorTarget;}
+function openRobotEditor(target=timelineTarget){editorTarget=robotFor(target)?target:'main';syncRobotEditorTargets();buildRobotEditor();$('robotEditorDialog').showModal();}
+on('openRobotEditor',()=>openRobotEditor());on('openRobotEditorFromPose',()=>openRobotEditor());
+on('editorRobot',()=>{editorTarget=$('editorRobot').value;buildRobotEditor();},'change');
+on('addImu',async()=>{const robot=robotFor(editorTarget);const link=$('sensorLink').value;if(!link)throw Error('This robot has no link available for a sensor');const requested=$('sensorName').value.trim();const sensor=await api('/api/sensors',{target:editorTarget,type:'imu',name:requested||nextSensorName(robot),link});await refresh();buildRobotEditor();editorTab('sensors');toast(sensor.name+' added to '+(robot.name||'Bittle')+'.');});
+on('editorApplyUrdf',async()=>{const xml=$('editorUrdf').value;if(editorTarget==='main')await api('/api/urdf',{xml});else await api('/api/actors/'+editorTarget,{xml});await refresh();syncRobotEditorTargets();buildRobotEditor();toast('Robot definition validated and applied.');});
+on('editorDownloadUrdf',()=>download(label(robotFor(editorTarget)?.name||'robot')+'.urdf',$('editorUrdf').value,'application/xml'));
+function updateSensors(readings) {for(const sensor of Object.values(readings||{})){const el=$('sensor-value-'+sensor.id);if(!el)continue;const r=sensor.orientation.map(v=>THREE.MathUtils.radToDeg(v).toFixed(1)+'°').join(', ');const g=sensor.angular_velocity.map(v=>Number(v).toFixed(2)).join(', ');el.textContent='RPY '+r+' · gyro '+g+' rad/s';}}
 function selectActor(id){
-  const actor=model.actors.find(a=>a.id===id);if(!actor)return;selectedActor=id;selected=null;mainSelected=false;gizmoTarget='actor';gizmo.detach();selectionBox.visible=false;$('selectRobot').classList.remove('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='URDF';tab('actor');$('actorEmpty').classList.add('hidden');$('actorForm').classList.remove('hidden');$('actorName').value=actor.name;$('actorUrdf').value=actor.xml;$('actorFixed').checked=actor.fixed;['Position','Rotation'].forEach(kind=>actor[kind.toLowerCase()].forEach((v,i)=>$('actor'+kind+i).value=(kind==='Rotation'?THREE.MathUtils.radToDeg(v):v).toFixed(4)));renderActors();renderObjectList();
+  const actor=model.actors.find(a=>a.id===id);if(!actor)return;selectedActor=id;selected=null;mainSelected=false;gizmoTarget='actor';gizmo.detach();selectionBox.visible=false;setTimelineTarget(id);$('selectRobot').classList.remove('selected');$('inspectorTitle').textContent='Robot inspector';$('selectionLabel').textContent='URDF';tab('actor');$('actorEmpty').classList.add('hidden');$('actorForm').classList.remove('hidden');$('actorName').value=actor.name;$('actorUrdf').value=actor.xml;$('actorFixed').checked=actor.fixed;$('actorDiagnostics').replaceChildren(...actor.warnings.map(w=>Object.assign(document.createElement('p'),{textContent:w})));['Position','Rotation'].forEach(kind=>actor[kind.toLowerCase()].forEach((v,i)=>$('actor'+kind+i).value=(kind==='Rotation'?THREE.MathUtils.radToDeg(v):v).toFixed(4)));renderActors();renderObjectList();
 }
 for(const kind of ['Position','Rotation'])for(let i=0;i<3;i++){const label=document.createElement('label');label.textContent=['X','Y','Z'][i];const input=document.createElement('input');input.type='number';input.step='any';input.id='actor'+kind+i;input.required=true;label.append(input);$('actor'+kind).append(label);}
 on('duplicateRobot',async()=>{await codePanel?.save();const actor=await api('/api/actors',{duplicate_main:true});await refresh();selectActor(actor.id);focusRobot();});
 on('actorForm',async e=>{e.preventDefault();await codePanel?.save();const body={name:$('actorName').value,xml:$('actorUrdf').value,fixed:$('actorFixed').checked,position:[0,1,2].map(i=>Number($('actorPosition'+i).value)),rotation:[0,1,2].map(i=>THREE.MathUtils.degToRad(Number($('actorRotation'+i).value)))};await api('/api/actors/'+selectedActor,body);await refresh();selectActor(selectedActor);toast('Robot updated.');},'submit');
+on('groundActor',async()=>{const actor=await api('/api/actors/'+selectedActor+'/ground',{});const current=model.actors.find(a=>a.id===selectedActor);Object.assign(current,actor);selectActor(selectedActor);toast(actor.name+' placed on the ground.');});
 on('deleteActor',async()=>{await api('/api/actors/'+selectedActor,{},'DELETE');selectedActor=null;await refresh();$('actorForm').classList.add('hidden');$('actorEmpty').classList.remove('hidden');});
 
-async function refresh(){loading=true;try{model=await api('/api/model');frameList=model.frames;selectedFrame=null;robotHandle.position.fromArray(model.robot_position||[0,0,.2]);robotHandle.rotation.set(...(model.robot_rotation||[0,0,0]),'XYZ');syncRobotFields();buildJoints();timeline();$('urdf').value=model.xml;$('gravity').value=model.gravity;$('friction').value=model.friction;$('fixed').checked=model.fixed;$('physicsHz').value=model.physics_hz;$('motionHz').value=model.motion_hz;$('motionDirection').value=model.direction;$('diagnostics').replaceChildren();for(const w of model.warnings){const p=document.createElement('p');p.textContent=w;$('diagnostics').append(p);}await buildRobot();await buildObjects();codePanel?.targets();}finally{loading=false;}}
-function applyState(s){state=s;if(!model)return;for(const [id,a] of Object.entries(s.actors||{})){for(const [name,[pos,quat]] of Object.entries(a.transforms)){const group=robotLinks.get(id+'/'+name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}}if(!(gizmo.dragging&&gizmoTarget==='robot'))for(const [name,[pos,quat]] of Object.entries(s.transforms)){const group=robotLinks.get(name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}for(const [id,[pos,quat]] of Object.entries(s.objects)){const mesh=objectMeshes.get(id);if(mesh&&!(gizmo.dragging&&id===selected)){mesh.position.fromArray(pos);mesh.quaternion.fromArray(quat);}}$('run').textContent=s.running?'Ⅱ Pause physics':'▶ Run physics';$('play').textContent=s.playing?'Ⅱ Pause motion':'▶ Play motion';$('mode').textContent=s.running?'PHYSICS LIVE':'POSE MODE';$('simTime').textContent=s.time.toFixed(2)+' s';$('height').textContent=s.height.toFixed(3)+' m';$('contacts').textContent=s.contacts;$('roll').textContent=THREE.MathUtils.radToDeg(s.rpy[0]).toFixed(1)+'°';if(document.activeElement!==$('scrubber'))$('scrubber').value=s.playhead;if(s.playing)$('frameTime').value=s.playhead.toFixed(2);updatePoseInputs(s.targets);if(s.running)gizmo.detach();else if(!gizmo.object){if(mainSelected)gizmo.attach(robotHandle);else if(selected&&objectMeshes.has(selected))gizmo.attach(objectMeshes.get(selected));}}
+on('timelineRobot',()=>{const target=$('timelineRobot').value;if(target==='main')selectMainRobot();else {selectActor(target);tab('pose');}},'change');
+async function refresh(){loading=true;try{const target=timelineTarget;model=await api('/api/model');$('timelineRobot').replaceChildren(new Option('Bittle · main','main'),...(model.actors||[]).map(a=>new Option(a.name,a.id)));robotHandle.position.fromArray(model.robot_position||[0,0,.2]);robotHandle.rotation.set(...(model.robot_rotation||[0,0,0]),'XYZ');syncRobotFields();setTimelineTarget(target);$('urdf').value=model.xml;$('gravity').value=model.gravity;$('friction').value=model.friction;$('fixed').checked=model.fixed;$('physicsHz').value=model.physics_hz;$('diagnostics').replaceChildren();for(const w of model.warnings){const p=document.createElement('p');p.textContent=w;$('diagnostics').append(p);}await buildRobot();await buildObjects();codePanel?.targets();syncRobotEditorTargets();if($('robotEditorDialog').open)buildRobotEditor();}finally{loading=false;}}
+function applyState(s){state=s;if(!model)return;for(const [id,a] of Object.entries(s.actors||{})){for(const [name,[pos,quat]] of Object.entries(a.transforms)){const group=robotLinks.get(id+'/'+name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}}if(!(gizmo.dragging&&gizmoTarget==='robot'))for(const [name,[pos,quat]] of Object.entries(s.transforms)){const group=robotLinks.get(name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}for(const [id,[pos,quat]] of Object.entries(s.objects)){const mesh=objectMeshes.get(id);if(mesh&&!(gizmo.dragging&&id===selected)){mesh.position.fromArray(pos);mesh.quaternion.fromArray(quat);}}const active=timelineState(s)||s;const editorState=editorTarget==='main'?s:s.actors?.[editorTarget];$('run').textContent=s.running?'Ⅱ Pause physics':'▶ Run physics';$('play').textContent=active.playing?'Ⅱ Pause motion':'▶ Play motion';$('mode').textContent=s.running?'PHYSICS LIVE':'POSE MODE';$('simTime').textContent=s.time.toFixed(2)+' s';$('height').textContent=active.height.toFixed(3)+' m';$('contacts').textContent=active.contacts;$('roll').textContent=THREE.MathUtils.radToDeg(active.rpy[0]).toFixed(1)+'°';if(document.activeElement!==$('scrubber'))$('scrubber').value=active.playhead;if(active.playing)$('frameTime').value=active.playhead.toFixed(2);updatePoseInputs(active.targets);updateSensors(editorState?.sensors);if(s.running)gizmo.detach();else if(!gizmo.object){if(mainSelected)gizmo.attach(robotHandle);else if(selected&&objectMeshes.has(selected))gizmo.attach(objectMeshes.get(selected));}}
 async function poll(){try{if(!loading){applyState(await api('/api/state'));$('connection').textContent='Bullet · '+state.physics_hz+' Hz';}}catch(e){$('connection').textContent='Disconnected · retrying';}setTimeout(poll,16);}
-try {await refresh();applyState(await api('/api/state'));focusRobot();$('loading').remove();codePanel=(await import('./code-panel.js')).initCodePanel({api,toast,getModel:()=>model,refresh});hardwarePanel=(await import('./hardware.js')).initHardware({api,toast,getModel:()=>model,getMapping:()=>Object.keys(mapping).length?mapping:model.mapping,refresh});window.dispatchEvent(new Event('bittle-hardware-ready'));poll();}catch(e){$('loading').textContent='Could not load Bittle: '+e.message;toast(e.message,true);}
+try {await refresh();applyState(await api('/api/state'));focusRobot();$('loading').remove();codePanel=(await import('./code-panel.js')).initCodePanel({api,toast,getModel:()=>model,refresh});hardwarePanel=(await import('./hardware.js')).initHardware({api,toast,getModel:()=>model,getMapping:()=>Object.keys(mapping).length?mapping:timelineModel().mapping,refresh});window.dispatchEvent(new Event('bittle-hardware-ready'));poll();}catch(e){$('loading').textContent='Could not load Bittle: '+e.message;toast(e.message,true);}

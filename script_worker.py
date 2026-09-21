@@ -38,6 +38,15 @@ class Context:
     def get_state(self):
         return rpc('state')
 
+    def get_sensors(self):
+        return rpc('sensors')
+
+    def get_sensor(self, name=None):
+        return rpc('sensor', name=name)
+
+    def get_imu(self, name=None):
+        return self.get_sensor(name)
+
     def set_position(self, position, rotation=None):
         return rpc('position', position=position, rotation=rotation)
 

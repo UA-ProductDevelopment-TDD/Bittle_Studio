@@ -225,6 +225,38 @@ class CodeWorkbenchTest(unittest.TestCase):
         self.assertAlmostEqual(position[0], target['position'][0], places=4)
         self.c.post('/api/robot-transform', json={'position': [0, 0, .2], 'rotation': [0, 0, 0]})
 
+    def test_09_imu_sensor_and_python_api(self):
+        model = self.c.get('/api/model').json()
+        sensor = self.c.post('/api/sensors', json={
+            'target': 'main', 'type': 'imu', 'name': 'Test IMU', 'link': model['links'][0]
+        })
+        self.assertEqual(sensor.status_code, 200, sensor.text)
+        sensor = sensor.json()
+        self.c.post('/api/robot-transform', json={'position': [0, 0, .2], 'rotation': [.1, -.2, .3]})
+        reading = self.c.get('/api/state').json()['sensors'][sensor['id']]
+        self.assertAlmostEqual(reading['orientation'][0], .1, places=4)
+        self.assertAlmostEqual(reading['orientation'][1], -.2, places=4)
+        self.assertEqual(len(reading['angular_velocity']), 3)
+        self.assertEqual(len(reading['linear_acceleration']), 3)
+        reapplied = self.c.post('/api/urdf', json={'xml': model['xml']})
+        self.assertEqual(reapplied.status_code, 200, reapplied.text)
+        self.assertTrue(any(item['id'] == sensor['id'] for item in reapplied.json()['sensors']))
+        duplicate = self.c.post('/api/sensors', json={
+            'target': 'main', 'type': 'imu', 'name': 'Test IMU', 'link': model['links'][0]
+        })
+        self.assertEqual(duplicate.status_code, 400)
+        self.save([{'id': 'imu', 'name': 'imu.py', 'target': 'main',
+                    'source': 'from bittle_sim import ctx\nimu=ctx.get_imu("Test IMU")\nassert len(imu["orientation"]) == 3\nassert "Test IMU" in [v["name"] for v in ctx.get_sensors().values()]\nprint("imu ok")'}])
+        self.assertEqual(self.c.post('/api/scripts/run', json={}).status_code, 200)
+        status = self.wait_finished()
+        self.assertEqual(status['jobs'][0]['status'], 'completed', status)
+        self.assertTrue(any('imu ok' in item['text'] for item in status['logs']))
+        project = self.c.get('/api/project').json()
+        self.assertTrue(any(item['id'] == sensor['id'] for item in project['sensors']))
+        self.assertEqual(self.c.post('/api/project', json=project).status_code, 200)
+        self.assertEqual(self.c.delete('/api/sensors/main/' + sensor['id']).status_code, 200)
+        self.c.post('/api/robot-transform', json={'position': [0, 0, .2], 'rotation': [0, 0, 0]})
+
 
 if __name__=='__main__':
     unittest.main()

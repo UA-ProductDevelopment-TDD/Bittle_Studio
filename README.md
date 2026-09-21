@@ -18,13 +18,15 @@ For another computer, install Python 3.11 and Node.js, then run `setup.cmd` once
 
 Keyboard: **F** focuses the robot; **Space** plays/pauses motion outside text fields. Orbit with left-drag, pan with right-drag, zoom with the wheel.
 
+The workspace uses a compact Isaac Sim-inspired charcoal layout: a large viewport and timeline on the left, with Stage above Inspector on the right. Stage search filters robots and objects; expand **Create & import** or **World physics** for their controls. Panels scroll independently on desktop and stack below the viewport on screens up to 700 px wide. Close Stage, Inspector, Timeline or Python with the **×** in its heading. Open it again from **Window** in the top bar; the chosen layout is remembered in this browser. **Window → Reset workspace** restores the standard layout. **Edit robot** opens one Robot Editor for the selected robot's complete structure, sensors and URDF source.
+
 ## Import and edit
 
 - Environment geometry: **OBJ, STL, GLB**. Geometry is flattened to OBJ; source textures/materials are replaced by the inspector's surface colour. Use mesh scale `0.001` on all axes for files authored in millimetres. Default units are metres and Z is up; rotate Y-up imports in the inspector.
 - Static mesh collision uses the triangle mesh. Dynamic meshes use Bullet's convex hull, so cavities/concavities will not collide exactly. Primitive boxes and spheres use exact primitive collision shapes.
-- Robot: import a **ZIP containing exactly one URDF** and its mesh folders. Relative paths must resolve within the ZIP structure. `package://robot/meshes/...` resolves to `robot/meshes/...` relative to the URDF directory. Primitive-only URDFs can be uploaded without ZIP.
+- Robot: import a **ZIP containing one URDF or Xacro robot source** and its mesh folders. Xacro macros and expressions are expanded during import; Gazebo, transmission and `ros2_control` blocks are ignored because Bullet does not execute their plugins. ROS `package://name/...` paths resolve through the bundle's `package.xml`, including packages whose ZIP folder has a different name. Primitive-only URDF or Xacro files can be uploaded directly.
 - URDF renderer supports mesh, box, sphere and cylinder visuals; mesh loaders cover OBJ, STL, DAE, GLB and GLTF. Bullet's own URDF mesh support is narrower; OBJ or STL is recommended for robot imports. Unsupported files produce an error instead of substituting a different model.
-- The **Model** tab exposes the URDF source. Edit joint limits, axes, mass, origins and geometry, then validate/apply. This replaces the simulated robot and clears its timeline; save your project first if retaining that animation matters. Download URDF saves the editor contents and does not bundle meshes.
+- **Edit robot → URDF source** exposes the selected robot's complete definition. Edit joint limits, axes, mass, origins and geometry, then validate/apply. Applying resets that robot's timeline, while sensors attached to links that still exist are retained. Download saves the editor contents and does not bundle meshes. The inspector's Model and Robot+ tabs remain as quick source editors.
 - Current pose controls support revolute joints. Other joint types are reported in diagnostics.
 
 ## Export to the real robot
@@ -65,8 +67,9 @@ References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial 
 
 - Configurable Physics Hz (60–1000, default 240); 80 solver iterations. Motion Hz (1–240, default 50) sets timeline target updates and the export sample rate independently. The browser polls transforms independently and shows the actual Bullet link transforms. Actual wall-clock performance depends on scene complexity.
 - Position motors use each URDF joint's effort and velocity limits. In pose mode, joints are placed directly, which is an animation preview rather than a physical result.
-- Supplied link masses are retained. Bullet computes inertia from collision geometry. The supplied Bittle file has multiple nonphysical inertia tensors; diagnostics report these. The original file under `C:/Nvidea_Omniverse/Robots/Bittle_URDF_scaled` is untouched; the bundled copy only corrects mesh paths.
-- Self-collision is enabled except between parent and child links. Ground friction is editable, as is each environment object's friction. No spring compliance, servo backlash, motor electronics, battery limits, balance controller or sensor noise is modelled.
+- Supplied link masses are retained. If a link omits inertial data, Studio uses the median declared mass and inertia as a runtime fallback and reports it in diagnostics. Bullet computes inertia from collision geometry. The supplied Bittle file has multiple nonphysical inertia tensors; diagnostics report these. The original file under `C:/Nvidea_Omniverse/Robots/Bittle_URDF_scaled` is untouched; the bundled copy only corrects mesh paths.
+- New additional robots are placed with their lowest collision shape 2 mm above the floor. **Place lowest collision on ground** applies the same correction after manual edits. Collision pairs that already penetrate in the authored zero pose are disabled and reported, preventing Bullet from launching overlapping CAD shells apart when physics starts.
+- Self-collision is enabled except between parent and child links. Ground friction is editable, as is each environment object's friction. No spring compliance, servo backlash, motor electronics, battery limits, automatic balance controller or sensor noise is modelled.
 - The supplied mesh set has 13 visual links and no head model; this application renders those supplied assets. It does not invent missing geometry.
 - The crouch example is a pose study, not a validated walking gait. Simulated motion does not guarantee balance or safe transfer to hardware. No real Bittle was connected or tested during development.
 - This is an initial workbench, not Blender feature parity: no inverse-kinematics foot handles, curve editor, texture authoring or native OpenCat firmware skill export yet. Multiple Python controllers, multiple URDFs and direct Petoi BLE/serial timeline testing are supported.
@@ -92,7 +95,7 @@ The Petoi function catalog and connection protocol integration are adapted from 
 
 ## Python workspace and motion timing
 
-Open **Python code** in the header. The viewport remains above the editor.
+Open **Window → Python code**. The viewport remains above the editor.
 
 - **Motion Hz** in the timeline changes target-update frequency. **Physics Hz** under World physics changes Bullet's step rate. **Order → First → last** is the default; reverse is explicit. **Start** begins at the correct endpoint, while Play resumes from the cursor.
 - Export has its own Hz, speed and order controls, initialized from the timeline. New samples are chronological, include both endpoints, and use Petoi's simultaneous `I` command. Increasing Hz cannot force a serial connection or firmware to keep up: the generated script reports achieved throughput. Integer servo angles remain quantized to degrees.
@@ -105,7 +108,11 @@ Open **Python code** in the header. The viewport remains above the editor.
 
 ### Additional robots
 
-Choose **URDF import → Add another robot** before importing a URDF/ZIP, or click **Add Bittle copy**. This adds another independently simulated body to the same world, including collisions with other bodies. Select it in Scene to edit its URDF, position, rotation or pinned-base setting. **Write code for this robot** makes a starter controller attached to it. Scene objects offer the same shortcut. The keyframe timeline still belongs to the main Bittle.
+Choose **URDF import → Add another robot** before importing a URDF/ZIP, or click **Add Bittle copy**. This adds another independently simulated body to the same world, including collisions with other bodies. Select it in Scene to edit its URDF, position, rotation or pinned-base setting. Use the **Robot** selector above the timeline to switch the joint panel, keyframes, playhead, Motion Hz and playback direction to that robot. Each robot keeps its own timeline in project files. **Write code for this robot** makes a starter controller attached to it. Scene objects offer the same shortcut.
+
+### Simulated IMU / gyro
+
+Open **Edit robot**, select the robot inside that window, then open **Sensors**. Give the sensor a name, choose the exact link and click **Add IMU / gyro**. The editor always suggests a unique name, shows live roll/pitch/yaw and angular velocity, and allows removal from the same card. Sensors are stored with that robot in autosave and project JSON. Python reads the data with `ctx.get_imu()`, `ctx.get_sensor(name)`, `ctx.get_sensors()`, or `ctx.get_state()["sensors"]`. Orientation uses Euler radians, angular velocity uses rad/s, and body-frame acceleration uses m/s². A stationary simulated accelerometer reports support against gravity; sensor bias and noise are intentionally absent.
 
 ### Controller API
 
@@ -122,12 +129,12 @@ for frame in range(150):
     rate.sleep()
 ```
 
-`ctx.get_state()` returns position, rotation, time, joint names, measured joint angles and target angles. `ctx.set_joints()` takes named angles in degrees. `ctx.set_position([x,y,z], [roll,pitch,yaw])` teleports the assigned target (metres and radians), useful for kinematic obstacle tests. `ctx.apply_force([fx,fy,fz])` applies a world-frame force at the base centre of mass for one physics step; use a dynamic body and enable physics. `ctx.sleep(seconds)`, `ctx.time()` and `ctx.rate(hz).sleep()` provide simulation timing.
+`ctx.get_state()` returns position, rotation, time, joint names, measured joint angles, target angles and configured sensors. `ctx.get_imu()` returns the first IMU, while `ctx.get_sensor(name)` selects one by name or ID. `ctx.set_joints()` takes named angles in degrees. `ctx.set_position([x,y,z], [roll,pitch,yaw])` teleports the assigned target (metres and radians), useful for kinematic obstacle tests. `ctx.apply_force([fx,fy,fz])` applies a world-frame force at the base centre of mass for one physics step; use a dynamic body and enable physics. `ctx.sleep(seconds)`, `ctx.time()` and `ctx.rate(hz).sleep()` provide simulation timing.
 
 ### Petoi compatibility and execution boundary
 
 Within the code panel, imports of `PetoiRobot` resolve to a simulation adapter supporting `autoConnect`, `openPort`, `closePort`, `rotateJoints`, `absValList`, `getAngle` and `getAngleList`. Exported files run as entry points with `--execute`, and their interactive prompts are acknowledged in the console. Their `STUDIO_MAPPING` is used to invert servo-space angles back to URDF angles. Old exports without embedded mapping use the target's saved mapping. Legacy `M` calls are accepted with a diagnostic, but their firmware-specific sequential timing is **not** emulated; regenerate them to use `I`.
 
-The adapter makes no serial connection. This is ordinary trusted local Python in a child process, **not a security sandbox**: arbitrary user code can use filesystem/network APIs or import other installed packages. Only execute code you trust. Stop kills the runner process, not arbitrary subprocesses deliberately spawned by user code. Firmware behaviours, sensor APIs, motor electronics, serial throughput and hardware calibration are not emulated.
+The adapter makes no serial connection. This is ordinary trusted local Python in a child process, **not a security sandbox**: arbitrary user code can use filesystem/network APIs or import other installed packages. Only execute code you trust. Stop kills the runner process, not arbitrary subprocesses deliberately spawned by user code. Firmware behaviours, physical sensor imperfections, motor electronics, serial throughput and hardware calibration are not emulated.
 
 The command correction is grounded in [Petoi's command definitions](https://github.com/PetoiCamp/OpenCat-Quadruped-Robot/blob/main/src/OpenCat.h): `I` is indexed simultaneous binary, `M` is indexed sequential binary.

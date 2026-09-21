@@ -49,6 +49,26 @@ class WorkbenchTest(unittest.TestCase):
         self.assertEqual(c.post('/api/frames', json={'frames': frames}).status_code, 200)
         c.post('/api/command', json={'action': 'seek', 'time': 1})
         self.assertAlmostEqual(c.get('/api/state').json()['targets'][first['name']], 15)
+        main_frames = c.get('/api/model').json()['frames']
+        actor = c.post('/api/actors', json={'duplicate_main': True}).json()
+        actor_zero = {j['name']: 0 for j in actor['joints']}
+        actor_pose = {**actor_zero, actor['joints'][0]['name']: 20}
+        actor_frames = [{'time': 0, 'pose': actor_zero}, {'time': 1, 'pose': actor_pose}]
+        result = c.post('/api/frames', json={'target': actor['id'], 'frames': actor_frames})
+        self.assertEqual(result.status_code, 200)
+        actor_frames = result.json()['frames']
+        self.assertEqual(len(c.get('/api/model').json()['frames']), 2)
+        c.post('/api/command', json={'action': 'seek', 'target': actor['id'], 'time': .5})
+        actor_state = c.get('/api/state').json()['actors'][actor['id']]
+        self.assertAlmostEqual(actor_state['targets'][actor['joints'][0]['name']], 10)
+        c.post('/api/command', json={'action': 'play', 'target': actor['id'], 'value': True,
+                                     'from_start': True, 'loop': False, 'hz': 100})
+        with server.sim.lock:
+            for _ in range(30):
+                server.sim.tick()
+        actor_state = c.get('/api/state').json()['actors'][actor['id']]
+        self.assertGreater(actor_state['playhead'], 0)
+        self.assertEqual(c.get('/api/model').json()['frames'], main_frames)
         obj = c.post('/api/objects', json={'type': 'box', 'position': [.3, 0, .1], 'size': [.1, .1, .1], 'mass': .1}).json()
         self.assertIn('id', obj)
         project = c.get('/api/project').json()
@@ -57,6 +77,8 @@ class WorkbenchTest(unittest.TestCase):
         self.assertEqual(project['frames'], restored['frames'])
         self.assertEqual(project['objects'], restored['objects'])
         self.assertEqual(project['targets'], restored['targets'])
+        restored_actor = next(a for a in restored['actors'] if a['id'] == actor['id'])
+        self.assertEqual(restored_actor['frames'], actor_frames)
         bad_mapping = c.post('/api/export', json={'mapping': model['mapping']})
         self.assertEqual(bad_mapping.status_code, 400)
         mapping = model['mapping']
@@ -84,6 +106,26 @@ class WorkbenchTest(unittest.TestCase):
         with zipfile.ZipFile(data, 'w') as z:
             z.writestr('../escape.urdf', 'invalid')
         self.assertEqual(c.post('/api/import', files={'file': ('unsafe.zip', data.getvalue())}).status_code, 400)
+        xacro_zip = io.BytesIO()
+        xacro_source = '''<robot name="xacro_bot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+          <xacro:macro name="wheel" params="side y">
+            <link name="${side}_wheel"><visual><geometry><mesh filename="package://test_pkg/meshes/wheel.obj"/></geometry></visual><collision><geometry><box size=".02 .01 .02"/></geometry></collision><inertial><mass value=".01"/><inertia ixx=".00001" iyy=".00001" izz=".00001" ixy="0" ixz="0" iyz="0"/></inertial></link>
+            <joint name="${side}_joint" type="revolute"><parent link="base"/><child link="${side}_wheel"/><origin xyz="0 ${y} 0"/><axis xyz="0 1 0"/><limit lower="-3.14" upper="3.14" effort="1" velocity="10"/></joint>
+          </xacro:macro>
+          <link name="base"><collision><geometry><box size=".05 .05 .02"/></geometry></collision><inertial><mass value=".1"/><inertia ixx=".0001" iyy=".0001" izz=".0001" ixy="0" ixz="0" iyz="0"/></inertial></link>
+          <xacro:wheel side="left" y=".03"/><xacro:wheel side="right" y="-.03"/>
+          <gazebo><plugin name="ignored" filename="libignored.so"><path>$(find test_pkg)</path></plugin></gazebo>
+        </robot>'''
+        with zipfile.ZipFile(xacro_zip, 'w') as z:
+            z.writestr('test_pkg/package.xml', '<package><name>test_pkg</name></package>')
+            z.writestr('test_pkg/urdf/robot.urdf.xacro', xacro_source)
+            z.writestr('test_pkg/meshes/wheel.obj', 'v 0 0 0\nv .01 0 0\nv 0 .01 0\nf 1 2 3\n')
+        imported = c.post('/api/import?mode=add', files={'file': ('xacro_bot.zip', xacro_zip.getvalue())})
+        self.assertEqual(imported.status_code, 200, imported.text)
+        actor = next(a for a in c.get('/api/model').json()['actors'] if a['id'] == imported.json()['id'])
+        self.assertEqual([j['name'] for j in actor['joints']], ['left_joint', 'right_joint'])
+        self.assertNotIn('xacro:', actor['xml'])
+        self.assertTrue(actor['visuals'][0]['url'].endswith('/test_pkg/meshes/wheel.obj'))
         original = c.get('/api/model').json()['xml']
         self.assertEqual(c.post('/api/urdf', json={'xml': '<robot broken'}).status_code, 400)
         missing = original.replace('obj/base_frame.obj', '../../outside.obj')

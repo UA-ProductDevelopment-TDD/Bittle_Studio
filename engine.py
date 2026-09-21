@@ -4,10 +4,12 @@ import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
+import xml.dom.minidom as minidom
 from pathlib import Path
 
 import numpy as np
 import pybullet as p
+import xacro
 
 ROOT = Path(__file__).parent.resolve()
 DATA = ROOT / 'data'
@@ -38,6 +40,71 @@ def asset_path(url):
     return path
 
 
+def _content_root(directory):
+    directory = Path(directory).resolve()
+    for base in (DATA, ROOT / 'assets'):
+        if directory.is_relative_to(base):
+            parts = directory.relative_to(base).parts
+            return base / parts[0] if parts else base
+    raise ValueError('Robot assets must be inside the project assets or data directory')
+
+
+def resolve_robot_asset(directory, filename):
+    """Resolve relative and ROS package:// paths inside one imported bundle."""
+    raw = filename.replace('\\', '/')
+    directory = Path(directory).resolve()
+    root = _content_root(directory)
+    candidates = []
+    if raw.startswith('package://'):
+        package, _, relative = raw[len('package://'):].partition('/')
+        if not package or not relative:
+            raise ValueError('Invalid ROS package URI: ' + raw)
+        for folder in [directory, *directory.parents]:
+            if not folder.is_relative_to(root) and folder != root:
+                break
+            if folder.name == package:
+                candidates.append(folder / relative)
+            manifest = folder / 'package.xml'
+            if manifest.is_file():
+                try:
+                    if (ET.parse(manifest).findtext('name') or '').strip() == package:
+                        candidates.append(folder / relative)
+                except ET.ParseError:
+                    pass
+            if folder == root:
+                break
+        for manifest in root.rglob('package.xml'):
+            try:
+                if (ET.parse(manifest).findtext('name') or '').strip() == package:
+                    candidates.append(manifest.parent / relative)
+            except ET.ParseError:
+                continue
+        candidates.append(root / package / relative)
+    else:
+        candidates.append(directory / raw)
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate.is_relative_to(root) and candidate.is_file():
+            return candidate
+    raise ValueError('Missing mesh: ' + raw + '. Keep the ROS package.xml and mesh folders in the imported ZIP.')
+
+
+def expand_robot_xml(xml, directory):
+    """Expand Xacro content while discarding simulator plugins Bullet cannot use."""
+    if 'xacro:' not in xml and '${' not in xml:
+        return xml
+    try:
+        document = minidom.parseString(xml)
+        for element in list(document.getElementsByTagName('*')):
+            if element.localName in ('gazebo', 'transmission', 'ros2_control') and element.parentNode:
+                element.parentNode.removeChild(element)
+        xacro.init_stacks(str(Path(directory) / 'studio-import.xacro'))
+        xacro.process_doc(document)
+        return document.toxml()
+    except Exception as error:
+        raise ValueError('Could not expand Xacro: ' + str(error)) from error
+
+
 class Simulation:
     def __init__(self, client=None, xml=None, directory=None, fixed=False):
         self.lock = threading.RLock()
@@ -50,6 +117,9 @@ class Simulation:
         self.actors = {}
         self.scripts = []
         self.motions = []
+        self.sensors = []
+        self.sensor_values = {}
+        self._sensor_velocities = {}
         self.running = False
         self.clock = 0.
         self.gravity = -9.81
@@ -75,12 +145,25 @@ class Simulation:
         self.load_robot(xml or (ROOT / 'assets/bittle/bittle.urdf').read_text(), directory or ROOT / 'assets/bittle')
 
     def load_robot(self, xml, directory):
+        xml = expand_robot_xml(xml, directory)
         tree = ET.fromstring(xml)
         if tree.tag != 'robot':
             raise ValueError('Expected a URDF <robot> element')
         warnings = []
         visuals = []
+        declared_masses = [float(node.get('value')) for node in tree.findall('link/inertial/mass')
+                           if float(node.get('value')) > 0]
+        declared_inertias = [float(node.get(axis)) for node in tree.findall('link/inertial/inertia')
+                             for axis in ('ixx', 'iyy', 'izz') if float(node.get(axis, 0)) > 0]
+        fallback_mass = float(np.median(declared_masses)) if declared_masses else .1
+        fallback_inertia = float(np.median(declared_inertias)) if declared_inertias else max(1e-6, fallback_mass * 1e-4)
         for link in tree.findall('link'):
+            if link.find('inertial') is None:
+                warnings.append(link.attrib['name'] + ': no inertial data; using the model median as a stable fallback.')
+                inertial = ET.SubElement(link, 'inertial')
+                ET.SubElement(inertial, 'mass', {'value': str(fallback_mass)})
+                ET.SubElement(inertial, 'inertia', {'ixx': str(fallback_inertia), 'iyy': str(fallback_inertia),
+                                                     'izz': str(fallback_inertia), 'ixy': '0', 'ixz': '0', 'iyz': '0'})
             inertia = link.find('inertial/inertia')
             if inertia is not None:
                 a = inertia.attrib
@@ -107,17 +190,11 @@ class Simulation:
         # Resolve every mesh before loading; XML cannot escape local asset roots.
         for mesh in tree.iter('mesh'):
             raw = mesh.get('filename', '').replace('\\', '/')
-            if raw.startswith('package://'):
-                raw = raw[len('package://'):]
-            path = (directory / raw).resolve()
-            asset_url(path)
-            if not path.is_file():
-                raise ValueError('Missing mesh: ' + raw + '. Import a ZIP containing the URDF and its mesh folders.')
+            path = resolve_robot_asset(directory, raw)
             mesh.set('filename', path.as_posix())
         for item in visuals:
             if item['type'] == 'mesh':
-                raw = item['filename'].replace('package://', '')
-                item['url'] = asset_url(directory / raw)
+                item['url'] = asset_url(resolve_robot_asset(directory, item['filename']))
                 item['scale'] = vector(item.get('scale'), (1, 1, 1))
         temp = DATA / ('runtime-' + uuid.uuid4().hex + '.urdf')
         temp.write_text(ET.tostring(tree, encoding='unicode'))
@@ -150,11 +227,27 @@ class Simulation:
                                     'effort': max(0, info[10]), 'velocity': max(0, info[11])})
             p.changeDynamics(new, i, lateralFriction=self.friction, physicsClientId=self.client)
         p.changeDynamics(new, -1, lateralFriction=self.friction, physicsClientId=self.client)
+        # Imported CAD URDFs commonly contain decorative collision shells that
+        # overlap in their authored zero pose.  Leaving those pairs enabled makes
+        # Bullet inject a large separating impulse as soon as physics starts.
+        p.performCollisionDetection(physicsClientId=self.client)
+        overlaps = set()
+        for contact in p.getContactPoints(bodyA=new, bodyB=new, physicsClientId=self.client):
+            link_a, link_b, distance = contact[3], contact[4], contact[8]
+            if link_a != link_b and distance < -1e-5:
+                overlaps.add(tuple(sorted((link_a, link_b))))
+        for link_a, link_b in overlaps:
+            p.setCollisionFilterPair(new, new, link_a, link_b, 0, physicsClientId=self.client)
+        if overlaps:
+            self.warnings.append(f'{len(overlaps)} initially overlapping self-collision pair(s) were disabled to prevent launch impulses.')
         self.targets = {j['name']: 0. for j in self.joints}
         self.running = self.playing = False
         self.frames = []
         self.playhead = self.clock = 0.
         self.mapping = {j['name']: {'servo': self.default_servo(j['name']), 'sign': 1, 'offset': 0, 'verified': False} for j in self.joints}
+        self.sensors = []
+        self.sensor_values = {}
+        self._sensor_velocities = {}
         self.pose(self.targets)
 
     @staticmethod
@@ -172,6 +265,67 @@ class Simulation:
             self.targets[j['name']] = max(j['lower'], min(j['upper'], value))
             if not self.running:
                 p.resetJointState(self.robot, j['id'], math.radians(self.targets[j['name']]), physicsClientId=self.client)
+        if not self.running and self.sensors:
+            self.update_sensors(None)
+
+    def add_sensor(self, definition):
+        sensor_type = str(definition.get('type', 'imu')).lower()
+        if sensor_type != 'imu':
+            raise ValueError('The supported sensor type is IMU')
+        link = str(definition.get('link') or next(iter(self.links)))
+        if link not in self.links:
+            raise ValueError('Sensor link is not part of this robot: ' + link)
+        sensor_id = str(definition.get('id') or uuid.uuid4().hex)[:64]
+        if any(item['id'] == sensor_id for item in self.sensors):
+            raise ValueError('Duplicate sensor ID')
+        name = str(definition.get('name') or 'Body IMU').strip()[:80]
+        if not name or any(item['name'] == name for item in self.sensors):
+            raise ValueError('Sensor names must be unique on a robot')
+        sensor = {'id': sensor_id, 'name': name, 'type': sensor_type, 'link': link}
+        self.sensors.append(sensor)
+        self.update_sensors(None)
+        return sensor
+
+    def remove_sensor(self, sensor_id):
+        sensor = next((item for item in self.sensors if item['id'] == sensor_id), None)
+        if sensor is None:
+            raise ValueError('Sensor not found')
+        self.sensors.remove(sensor)
+        self.sensor_values.pop(sensor_id, None)
+        self._sensor_velocities.pop(sensor_id, None)
+
+    def _link_motion(self, link):
+        index = self.links[link]
+        if index < 0:
+            position, quaternion = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.client)
+            linear, angular = p.getBaseVelocity(self.robot, physicsClientId=self.client)
+        else:
+            state = p.getLinkState(self.robot, index, computeLinkVelocity=1, computeForwardKinematics=1,
+                                   physicsClientId=self.client)
+            position, quaternion, linear, angular = state[4], state[5], state[6], state[7]
+        inverse = p.invertTransform([0, 0, 0], quaternion)[1]
+        return position, quaternion, linear, angular, inverse
+
+    def update_sensors(self, dt):
+        for sensor in self.sensors:
+            position, quaternion, linear, angular, inverse = self._link_motion(sensor['link'])
+            previous = self._sensor_velocities.get(sensor['id'])
+            acceleration = [0., 0., 0.] if not dt or previous is None else [
+                (linear[i] - previous[i]) / dt for i in range(3)]
+            # A stationary accelerometer reads upward against gravity.
+            acceleration[2] -= self.gravity
+            self._sensor_velocities[sensor['id']] = list(linear)
+            self.sensor_values[sensor['id']] = {
+                **sensor, 'position': list(position), 'orientation': list(p.getEulerFromQuaternion(quaternion)),
+                'quaternion': list(quaternion), 'angular_velocity': list(p.rotateVector(inverse, angular)),
+                'linear_acceleration': list(p.rotateVector(inverse, acceleration)),
+            }
+
+    def sensor_readings(self):
+        # Orientation should also follow pose edits while physics is paused.
+        if not self.running and self.sensors:
+            self.update_sensors(None)
+        return {key: dict(value) for key, value in self.sensor_values.items()}
 
     def sample(self, t):
         if not self.frames:
@@ -220,26 +374,37 @@ class Simulation:
                                    targetPosition=math.radians(self.targets[j['name']]), force=j['effort'],
                                    maxVelocity=j['velocity'], physicsClientId=self.client)
 
+    def advance_motion(self, dt):
+        if not (self.playing and self.frames):
+            return
+        self.playhead += dt * self.speed * (1 if self.direction == 'forward' else -1)
+        end = self.frames[-1]['time']
+        finished = self.playhead > end or self.playhead < 0
+        if finished:
+            self.playhead = (0 if self.direction == 'forward' else end) if self.loop else (end if self.direction == 'forward' else 0)
+            self.playing = self.loop and end > 0
+        self.motion_elapsed += dt
+        if self.motion_elapsed >= 1 / self.motion_hz or finished:
+            self.motion_elapsed %= 1 / self.motion_hz
+            self.pose(self.sample(self.playhead))
+
     def tick(self):
         dt = 1 / self.physics_hz
         self.runtime_clock += dt
-        if self.playing and self.frames:
-            self.playhead += dt * self.speed * (1 if self.direction == 'forward' else -1)
-            end = self.frames[-1]['time']
-            finished = self.playhead > end or self.playhead < 0
-            if finished:
-                self.playhead = (0 if self.direction == 'forward' else end) if self.loop else (end if self.direction == 'forward' else 0)
-                self.playing = self.loop and end > 0
-            self.motion_elapsed += dt
-            if self.motion_elapsed >= 1 / self.motion_hz or finished:
-                self.motion_elapsed %= 1 / self.motion_hz
-                self.pose(self.sample(self.playhead))
+        self.advance_motion(dt)
+        for actor in self.actors.values():
+            actor.runtime_clock = self.runtime_clock
+            actor.running = self.running
+            actor.advance_motion(dt)
         if self.running:
             self.drive_motors()
             for actor in self.actors.values():
                 actor.drive_motors()
             p.stepSimulation(physicsClientId=self.client)
             self.clock += dt
+            self.update_sensors(dt)
+            for actor in self.actors.values():
+                actor.update_sensors(dt)
 
     def worker(self):
         last = time.perf_counter()
@@ -260,14 +425,19 @@ class Simulation:
         p.resetBasePositionAndOrientation(self.robot, self.home_position, p.getQuaternionFromEuler(self.home_rotation), physicsClientId=self.client)
         p.resetBaseVelocity(self.robot, [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
         self.pose(self.sample(0) if self.frames else self.targets)
+        self._sensor_velocities.clear()
+        self.update_sensors(None)
         for obj in self.objects:
             p.resetBasePositionAndOrientation(obj['body'], obj['position'], p.getQuaternionFromEuler(obj['rotation']), physicsClientId=self.client)
             p.resetBaseVelocity(obj['body'], [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
         for actor in self.actors.values():
             p.resetBasePositionAndOrientation(actor.robot, actor.home_position, p.getQuaternionFromEuler(actor.home_rotation), physicsClientId=self.client)
             p.resetBaseVelocity(actor.robot, [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
-            actor.running = False
-            actor.pose({j['name']: 0 for j in actor.joints})
+            actor.running = actor.playing = False
+            actor.playhead = actor.clock = 0.
+            actor.pose(actor.sample(0) if actor.frames else actor.targets)
+            actor._sensor_velocities.clear()
+            actor.update_sensors(None)
 
     def set_robot_transform(self, position, rotation):
         position = vector(' '.join(map(str, position)))
@@ -278,9 +448,19 @@ class Simulation:
         p.resetBasePositionAndOrientation(self.robot, position, p.getQuaternionFromEuler(rotation), physicsClientId=self.client)
         p.resetBaseVelocity(self.robot, [0, 0, 0], [0, 0, 0], physicsClientId=self.client)
 
+    def place_on_ground(self, clearance=.002):
+        boxes = [p.getAABB(self.robot, i, physicsClientId=self.client)
+                 for i in range(-1, p.getNumJoints(self.robot, physicsClientId=self.client))]
+        lowest = min(box[0][2] for box in boxes)
+        position = list(p.getBasePositionAndOrientation(self.robot, physicsClientId=self.client)[0])
+        position[2] += float(clearance) - lowest
+        self.set_robot_transform(position, self.home_rotation)
+        return position
+
     def add_actor(self, definition):
         directory = (ROOT / definition['directory'].lstrip('/')).resolve()
         asset_url(directory / 'placeholder')
+        auto_ground = 'position' not in definition or bool(definition.get('place_on_ground', False))
         position = vector(' '.join(map(str, definition.get('position', [.35, 0, .2]))))
         rotation = vector(' '.join(map(str, definition.get('rotation', [0, 0, 0]))))
         actor_id = definition.get('id', uuid.uuid4().hex)
@@ -294,6 +474,18 @@ class Simulation:
             p.resetBasePositionAndOrientation(actor.robot, position, p.getQuaternionFromEuler(rotation), physicsClientId=self.client)
             actor.pose(definition.get('targets', {}))
             actor.mapping = definition.get('mapping', actor.mapping)
+            actor.set_frames(definition.get('frames', []))
+            actor.motion_hz = float(definition.get('motion_hz', self.motion_hz))
+            actor.direction = definition.get('direction', 'forward')
+            if not 1 <= actor.motion_hz <= 240 or actor.direction not in ('forward', 'reverse'):
+                raise ValueError('Invalid actor motion settings')
+            if auto_ground:
+                actor.place_on_ground()
+            for sensor in definition.get('sensors', []):
+                try:
+                    actor.add_sensor(sensor)
+                except ValueError as exc:
+                    actor.warnings.append(f"Sensor {sensor.get('name', 'IMU')} was not restored: {exc}")
             self.actors[actor_id] = actor
             return actor
         except Exception:
@@ -304,9 +496,10 @@ class Simulation:
         result = {'id': self.actor_id, 'name': self.actor_name, 'xml': self.xml,
                   'directory': asset_url(self.directory / 'placeholder').rsplit('/', 1)[0],
                   'position': self.home_position, 'rotation': self.home_rotation, 'fixed': self.fixed,
-                  'targets': self.targets.copy(), 'mapping': self.mapping}
+                  'targets': self.targets.copy(), 'mapping': self.mapping, 'frames': self.frames,
+                  'motion_hz': self.motion_hz, 'direction': self.direction, 'sensors': self.sensors}
         if visuals:
-            result.update(visuals=self.visuals, joints=self.joints, warnings=self.warnings)
+            result.update(visuals=self.visuals, joints=self.joints, links=list(self.links), warnings=self.warnings)
         return result
 
     def add_object(self, obj):
@@ -360,7 +553,8 @@ class Simulation:
                 'running': self.running, 'playing': self.playing,
                 'time': self.clock, 'playhead': self.playhead, 'targets': self.targets,
                 'angles': {j['name']: math.degrees(p.getJointState(self.robot, j['id'], physicsClientId=self.client)[0]) for j in self.joints},
-                'height': pos[2], 'rpy': p.getEulerFromQuaternion(quat), 'contacts': len(contacts)}
+                'height': pos[2], 'rpy': p.getEulerFromQuaternion(quat), 'contacts': len(contacts),
+                'sensors': self.sensor_readings()}
 
     def model(self):
         return {'joints': self.joints, 'visuals': self.visuals, 'warnings': self.warnings, 'xml': self.xml,
@@ -369,5 +563,6 @@ class Simulation:
                 'friction': self.friction, 'targets': self.targets, 'physics_hz': self.physics_hz,
                 'motion_hz': self.motion_hz, 'direction': self.direction,
                 'robot_position': self.home_position, 'robot_rotation': self.home_rotation,
+                'sensors': self.sensors, 'links': list(self.links),
                 'actors': [a.actor_definition(True) for a in self.actors.values()], 'scripts': self.scripts,
                 'motions': self.motions}

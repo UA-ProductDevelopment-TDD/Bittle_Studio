@@ -132,6 +132,15 @@ def state():
         return sim.state()
 
 
+def selected_robot(target='main'):
+    if target in (None, '', 'main'):
+        return sim
+    actor = sim.actors.get(str(target))
+    if actor is None:
+        raise ValueError('Robot not found')
+    return actor
+
+
 @app.post('/api/command')
 def command(body: dict):
     if body['action'] == 'reset':
@@ -140,27 +149,39 @@ def command(body: dict):
         runner.ensure_idle()
     with sim.lock:
         action = body['action']
+        robot = selected_robot(body.get('target'))
         if action == 'run':
             sim.running = bool(body['value'])
         elif action == 'reset':
             sim.reset()
         elif action == 'pose':
-            sim.pose(body['pose'])
+            robot.pose(body['pose'])
         elif action == 'seek':
-            sim.playing = False
-            sim.playhead = max(0, min(600, float(body['time'])))
-            sim.pose(sim.sample(sim.playhead))
+            robot.playing = False
+            robot.playhead = max(0, min(600, float(body['time'])))
+            robot.pose(robot.sample(robot.playhead))
         elif action == 'play':
-            sim.configure_rates(sim.physics_hz, body.get('hz', sim.motion_hz), body.get('direction', sim.direction))
-            sim.playing = bool(body['value']) and len(sim.frames) > 1
-            sim.loop = bool(body.get('loop', True))
-            sim.speed = max(.1, min(2, float(body.get('speed', 1))))
-            if body.get('from_start') or (sim.frames and (sim.playhead >= sim.frames[-1]['time'] or sim.playhead <= 0)):
-                sim.playhead = 0 if sim.direction == 'forward' else sim.frames[-1]['time'] if sim.frames else 0
-            sim.motion_elapsed = 0
-            if sim.playing:
-                sim.pose(sim.sample(sim.playhead))
+            hz = float(body.get('hz', robot.motion_hz))
+            direction = body.get('direction', robot.direction)
+            if not 1 <= hz <= 240 or direction not in ('forward', 'reverse'):
+                raise ValueError('Invalid motion Hz or direction')
+            robot.motion_hz, robot.direction = hz, direction
+            robot.playing = bool(body['value']) and len(robot.frames) > 1
+            robot.loop = bool(body.get('loop', True))
+            robot.speed = max(.1, min(2, float(body.get('speed', 1))))
+            if body.get('from_start') or (robot.frames and (robot.playhead >= robot.frames[-1]['time'] or robot.playhead <= 0)):
+                robot.playhead = 0 if robot.direction == 'forward' else robot.frames[-1]['time'] if robot.frames else 0
+            robot.motion_elapsed = 0
+            if robot.playing:
+                robot.pose(robot.sample(robot.playhead))
         elif action == 'settings':
+            if robot is not sim:
+                hz = float(body.get('motion_hz', robot.motion_hz))
+                direction = body.get('direction', robot.direction)
+                if not 1 <= hz <= 240 or direction not in ('forward', 'reverse'):
+                    raise ValueError('Invalid robot motion settings')
+                robot.motion_hz, robot.direction = hz, direction
+                return sim.state()
             gravity = float(body.get('gravity', sim.gravity))
             friction = float(body.get('friction', sim.friction))
             if not -30 <= gravity <= 0 or not 0 <= friction <= 3:
@@ -168,7 +189,7 @@ def command(body: dict):
             fixed = bool(body.get('fixed', sim.fixed))
             if fixed != sim.fixed:
                 old = sim.fixed
-                frames, targets, mapping = sim.frames, sim.targets.copy(), sim.mapping
+                frames, targets, mapping, sensors = sim.frames, sim.targets.copy(), sim.mapping, sim.sensors
                 sim.fixed = fixed
                 try:
                     sim.load_robot(sim.xml, sim.directory)
@@ -177,7 +198,11 @@ def command(body: dict):
                     raise
                 sim.frames, sim.mapping = frames, mapping
                 sim.pose(targets)
+                for sensor in sensors:
+                    sim.add_sensor(sensor)
             sim.gravity, sim.friction = gravity, friction
+            for actor in sim.actors.values():
+                actor.gravity = gravity
             p.setGravity(0, 0, gravity, physicsClientId=sim.client)
             for link in range(-1, p.getNumJoints(sim.robot, physicsClientId=sim.client)):
                 p.changeDynamics(sim.robot, link, lateralFriction=friction, physicsClientId=sim.client)
@@ -192,15 +217,23 @@ def command(body: dict):
 def frames(body: dict):
     runner.ensure_idle()
     with sim.lock:
-        sim.set_frames(body['frames'])
-        return {'frames': sim.frames}
+        robot = selected_robot(body.get('target'))
+        robot.set_frames(body['frames'])
+        return {'frames': robot.frames}
 
 
 @app.post('/api/urdf')
 def urdf(body: dict):
     runner.ensure_idle()
     with sim.lock:
+        sensors = list(sim.sensors)
         sim.load_robot(body['xml'], sim.directory)
+        for sensor in sensors:
+            if sensor.get('link') in sim.links:
+                sim.add_sensor(sensor)
+            else:
+                sim.warnings.append(f"Sensor {sensor.get('name', 'IMU')} was removed because link {sensor.get('link')} no longer exists.")
+        checkpoint()
         return sim.model()
 
 
@@ -252,9 +285,11 @@ async def import_asset(file: UploadFile = File(...), mode: str = 'replace'):
                 if not member.is_dir():
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(archive.read(member))
-        files = list(directory.rglob('*.urdf'))
+        urdf_files = [item for item in directory.rglob('*') if item.is_file() and item.name.lower().endswith('.urdf')]
+        xacro_files = [item for item in directory.rglob('*') if item.is_file() and item.name.lower().endswith(('.xacro', '.urdf.xacro'))]
+        files = urdf_files or xacro_files
         if len(files) != 1:
-            raise ValueError('Robot ZIP must contain exactly one .urdf file')
+            raise ValueError('Robot ZIP must contain one .urdf or .xacro robot source')
         path = files[0]
         with sim.lock:
             if mode == 'add':
@@ -263,7 +298,7 @@ async def import_asset(file: UploadFile = File(...), mode: str = 'replace'):
             sim.load_robot(path.read_text(), path.parent)
             return {'kind': 'robot'}
     path.write_bytes(content)
-    if suffix == '.urdf':
+    if suffix in ('.urdf', '.xacro'):
         with sim.lock:
             if mode == 'add':
                 actor = sim.add_actor({'xml': content.decode('utf-8-sig'), 'directory': asset_url(directory / 'placeholder').rsplit('/', 1)[0], 'name': path.stem})
@@ -271,7 +306,7 @@ async def import_asset(file: UploadFile = File(...), mode: str = 'replace'):
             sim.load_robot(content.decode('utf-8-sig'), directory)
         return {'kind': 'robot'}
     if suffix not in ('.obj', '.stl', '.glb'):
-        raise ValueError('Use OBJ, STL, GLB, URDF, or a URDF ZIP')
+        raise ValueError('Use OBJ, STL, GLB, URDF, Xacro, or a robot ZIP')
     # Flatten the mesh into a self-contained OBJ for consistent Bullet collision and display.
     mesh = trimesh.load(str(path), force='mesh', process=False)
     if not isinstance(mesh, trimesh.Trimesh) or len(mesh.vertices) == 0 or not bool(__import__('numpy').isfinite(mesh.vertices).all()):
@@ -287,6 +322,7 @@ def get_project():
     with sim.lock:
         return {'format': 'bittle-studio', 'version': 1, 'xml': sim.xml, 'directory': asset_url(sim.directory / 'placeholder').rsplit('/', 1)[0],
                 **{k: v for k, v in sim.model().items() if k in ('objects', 'frames', 'mapping', 'fixed', 'gravity', 'friction', 'targets', 'physics_hz', 'motion_hz', 'direction', 'scripts', 'motions', 'robot_position', 'robot_rotation')},
+                'sensors': sim.sensors,
                 'actors': [a.actor_definition() for a in sim.actors.values()]}
 
 
@@ -307,6 +343,8 @@ def load_project(body: dict):
         candidate.set_frames(body.get('frames', []))
         candidate.pose(body.get('targets', {}))
         candidate.mapping = body.get('mapping', candidate.mapping)
+        for sensor in body.get('sensors', []):
+            candidate.add_sensor(sensor)
         candidate.scripts = validate_scripts(body.get('scripts', []))
         candidate.motions = validate_motions(body.get('motions', []), candidate)
         candidate.configure_rates(body.get('physics_hz', 240), body.get('motion_hz', 50), body.get('direction', 'forward'))
@@ -319,6 +357,8 @@ def load_project(body: dict):
         if not -30 <= candidate.gravity <= 0 or not 0 <= candidate.friction <= 3:
             raise ValueError('Invalid physics settings')
         p.setGravity(0, 0, candidate.gravity, physicsClientId=candidate.client)
+        for actor in candidate.actors.values():
+            actor.gravity = candidate.gravity
         p.changeDynamics(candidate.ground, -1, lateralFriction=candidate.friction, physicsClientId=candidate.client)
         for i in range(-1, p.getNumJoints(candidate.robot, physicsClientId=candidate.client)):
             p.changeDynamics(candidate.robot, i, lateralFriction=candidate.friction, physicsClientId=candidate.client)
@@ -337,15 +377,17 @@ def load_project(body: dict):
 @app.post('/api/export')
 def export_motion(body: dict):
     with sim.lock:
-        script, mapping, metadata = python_motion(sim, body)
-        sim.mapping = mapping
+        robot = selected_robot(body.get('target'))
+        script, mapping, metadata = python_motion(robot, body)
+        robot.mapping = mapping
         return PlainTextResponse(script)
 
 
 @app.post('/api/motion-code')
 def motion_code(body: dict):
     with sim.lock:
-        script, mapping, metadata = python_motion(sim, body, hardware=False)
+        robot = selected_robot(body.get('target'))
+        script, mapping, metadata = python_motion(robot, body, hardware=False)
         return {'source': script, 'metadata': metadata}
 
 
@@ -353,8 +395,9 @@ def motion_code(body: dict):
 def motion_samples(body: dict):
     """Return verified servo-space samples for an explicit browser hardware action."""
     with sim.lock:
-        samples, mapping, metadata = build_motion(sim, body, hardware=True)
-        sim.mapping = mapping
+        robot = selected_robot(body.get('target'))
+        samples, mapping, metadata = build_motion(robot, body, hardware=True)
+        robot.mapping = mapping
         checkpoint()
         return {'samples': samples, 'metadata': metadata}
 
@@ -362,8 +405,9 @@ def motion_samples(body: dict):
 @app.post('/api/motion-skill')
 def motion_skill(body: dict):
     with sim.lock:
-        skill, mapping, metadata = firmware_skill(sim, body)
-        sim.mapping = mapping
+        robot = selected_robot(body.get('target'))
+        skill, mapping, metadata = firmware_skill(robot, body)
+        robot.mapping = mapping
         checkpoint()
         return {'skill': skill, 'metadata': metadata}
 
@@ -377,6 +421,24 @@ def robot_transform(body: dict):
         sim.set_robot_transform(body['position'], body['rotation'])
         checkpoint()
         return sim.state()
+
+
+@app.post('/api/sensors')
+def add_sensor(body: dict):
+    with sim.lock:
+        robot = selected_robot(body.get('target'))
+        sensor = robot.add_sensor(body)
+        checkpoint()
+        return sensor
+
+
+@app.delete('/api/sensors/{target}/{sensor_id}')
+def delete_sensor(target: str, sensor_id: str):
+    with sim.lock:
+        robot = selected_robot(target)
+        robot.remove_sensor(sensor_id)
+        checkpoint()
+        return {'ok': True}
 
 
 @app.get('/api/motions')
@@ -550,6 +612,18 @@ def edit_actor(actor_id: str, body: dict):
         sim.actors[actor_id] = new
         p.removeBody(old.robot, physicsClientId=sim.client)
         return new.actor_definition(True)
+
+
+@app.post('/api/actors/{actor_id}/ground')
+def ground_actor(actor_id: str):
+    runner.ensure_idle()
+    with sim.lock:
+        if sim.running:
+            raise ValueError('Pause physics before placing a robot on the ground')
+        actor = selected_robot(actor_id)
+        actor.place_on_ground()
+        checkpoint()
+        return actor.actor_definition(True)
 
 
 @app.delete('/api/actors/{actor_id}')

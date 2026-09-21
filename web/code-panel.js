@@ -10,6 +10,8 @@ import math
 
 state = ctx.get_state()
 print(state["joint_names"])
+imu = ctx.get_imu()                              # first configured IMU
+print(imu["orientation"], imu["angular_velocity"])
 ctx.set_joints({"left-front-shoulder-joint": 20}) # degrees
 ctx.set_position([0.3, 0, 0.1], [0, 0, 0])     # metres, Euler radians
 ctx.apply_force([0, 0, 1])                      # Newtons, one physics step
@@ -32,7 +34,9 @@ PetoiRobot adapter: autoConnect, openPort, closePort, rotateJoints,
 absValList, getAngle, getAngleList. Unsupported firmware APIs fail.
 Exported scripts run with --execute inside the simulation adapter.
 Old files use the target mapping; new exports embed STUDIO_MAPPING.
-The adapter supports joint targets, not firmware timing or sensors.
+ctx.get_sensor(name), get_imu(name), and get_sensors() read configured
+simulation sensors. IMU angles use radians and gyro rates use rad/s.
+The adapter does not emulate firmware timing or physical sensor noise.
 
 Stop terminates running processes and pauses physics. Reset also
 stops scripts. A run time limit stops infinite loops. Scripts can use
@@ -45,13 +49,14 @@ normal Python modules and filesystem APIs: only run trusted code.`;
   function list(){ $('scriptFiles').replaceChildren();files.forEach(file=>{const row=document.createElement('div');row.className='code-file'+(file.id===current?' active':'');const check=document.createElement('input');check.type='checkbox';check.checked=file.enabled;check.setAttribute('aria-label','Run '+file.name);check.onchange=()=>{file.enabled=check.checked;schedule();};const button=document.createElement('button');button.textContent=file.name;button.title=file.name;button.onclick=()=>{capture();select(file.id);};row.append(check,button);$('scriptFiles').append(row);});}
   function select(id){current=id;const file=files.find(f=>f.id===id);$('scriptName').value=file?.name||'';$('scriptSource').value=file?.source||'';targets();if(file)$('scriptTarget').value=file.target;list();}
   function show(){document.querySelector('.workspace').classList.add('coding');$('codePanel').classList.remove('hidden');targets();}
+  function hide(){document.querySelector('.workspace').classList.remove('coding');$('codePanel').classList.add('hidden');}
   function uniqueName(name){const base=name.replace(/\.py$/,'').replace(/[^A-Za-z_0-9]/g,'_').replace(/^[0-9]/,'_');let n=base+'.py',i=2;while(files.some(f=>f.name===n))n=base+'_'+i+++'.py';return n;}
   async function addSource(source,name='motion.py',target='main'){capture();const file={id:crypto.randomUUID(),name:uniqueName(name),source,target,enabled:true};files.push(file);select(file.id);show();await save();}
-  function example(target){const actor=target==='main'?getModel():(getModel().actors||[]).find(a=>a.id===target);if(actor){const joint=actor.joints[0]?.name;return `from bittle_sim import ctx\nimport math\n\nrate = ctx.rate(50)\nfor frame in range(150):\n    angle = 15 * math.sin(2 * math.pi * frame / 150)\n    ctx.set_joints({${JSON.stringify(joint||'joint')}: angle})\n    rate.sleep()\nprint("Joint sweep complete")\n`;}
+  function example(target){const actor=target==='main'?getModel():(getModel().actors||[]).find(a=>a.id===target);if(actor){if(actor.sensors?.length){const ankles=actor.joints.filter(j=>/ankle/i.test(j.name)).map(j=>j.name);return `from bittle_sim import ctx\n\n# Simple simulated balance starting point. Tune signs and gains for this URDF.\nankles = ${JSON.stringify(ankles)}\nrate = ctx.rate(50)\nwhile True:\n    imu = ctx.get_imu(${JSON.stringify(actor.sensors[0].name)})\n    pitch = imu["orientation"][1]              # radians\n    pitch_rate = imu["angular_velocity"][1]   # rad/s\n    correction = max(-30, min(30, -30 * pitch - 3 * pitch_rate))\n    ctx.set_joints({name: correction for name in ankles})\n    rate.sleep()\n`; }const joint=actor.joints[0]?.name;return `from bittle_sim import ctx\nimport math\n\nrate = ctx.rate(50)\nfor frame in range(150):\n    angle = 15 * math.sin(2 * math.pi * frame / 150)\n    ctx.set_joints({${JSON.stringify(joint||'joint')}: angle})\n    rate.sleep()\nprint("Joint sweep complete")\n`;}
     return `from bittle_sim import ctx\nimport math\n\norigin = ctx.get_state()["position"]\nrate = ctx.rate(50)\nfor frame in range(150):\n    x = origin[0] + 0.08 * math.sin(2 * math.pi * frame / 150)\n    ctx.set_position([x, origin[1], origin[2]])\n    rate.sleep()\nprint("Object motion complete")\n`;}
   async function forTarget(target){await addSource(example(target),'controller.py',target);}
   bind('newScript',()=>forTarget($('scriptTarget').value||'main'));
-  bind('closeCode',()=>{document.querySelector('.workspace').classList.remove('coding');$('codePanel').classList.add('hidden');});
+  bind('closeCode',hide);
   bind('saveScript',async()=>{await save();list();toast('Python files saved in the current project.');});
   bind('scriptSource',schedule,'input');bind('scriptName',()=>{schedule();},'input');bind('scriptTarget',schedule,'change');
   $('scriptSource').addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const t=e.target,start=t.selectionStart,end=t.selectionEnd;t.setRangeText('    ',start,end,'end');schedule();}});
@@ -64,5 +69,5 @@ normal Python modules and filesystem APIs: only run trusted code.`;
   bind('codeHelp',()=>$('codeHelpDialog').showModal());bind('closeCodeHelp',()=>$('codeHelpDialog').close());
   async function poll(){try{const status=await api('/api/scripts');active=status.active;$('codeStatus').textContent=status.jobs.length?status.jobs.map(j=>j.name+': '+j.status).join(' · '):'Ready';$('runScript').disabled=$('runAllScripts').disabled=active;const lines=status.logs.filter(l=>l.seq>lastLog);if(lines.length){lastLog=lines.at(-1).seq;$('codeConsole').textContent=($('codeConsole').textContent+lines.map(l=>'['+l.file+'] '+l.text).join('\n')+'\n').slice(-24000);$('codeConsole').scrollTop=$('codeConsole').scrollHeight;}}catch{}setTimeout(poll,500);}poll();
   if(files.length)select(files[0].id);
-  return {show,save,addSource,forTarget, reload(){files=structuredClone(getModel().scripts||[]);dirty=false;select(files.some(f=>f.id===current)?current:files[0]?.id||null);},targets};
+  return {show,hide,save,addSource,forTarget, reload(){files=structuredClone(getModel().scripts||[]);dirty=false;select(files.some(f=>f.id===current)?current:files[0]?.id||null);},targets};
 }

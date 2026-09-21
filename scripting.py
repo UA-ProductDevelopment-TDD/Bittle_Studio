@@ -180,7 +180,20 @@ class ScriptRunner:
                 pos, quat = p.getBasePositionAndOrientation(body, physicsClientId=self.sim.client)
                 return {'position': pos, 'rotation': p.getEulerFromQuaternion(quat), 'time': self.sim.runtime_clock,
                         'joints': {j['name']: math.degrees(p.getJointState(body, j['id'], physicsClientId=self.sim.client)[0]) for j in actor.joints} if actor else {},
-                        'targets': actor.targets.copy() if actor else {}, 'joint_names': [j['name'] for j in actor.joints] if actor else []}
+                        'targets': actor.targets.copy() if actor else {}, 'joint_names': [j['name'] for j in actor.joints] if actor else [],
+                        'sensors': actor.sensor_readings() if actor else {}}
+            if method in ('sensors', 'sensor'):
+                if actor is None:
+                    raise ValueError('Scene objects do not have robot sensors')
+                readings = actor.sensor_readings()
+                if method == 'sensors':
+                    return readings
+                query = args.get('name')
+                sensor = next((value for key, value in readings.items()
+                               if query in (None, '', key, value['name'])), None)
+                if sensor is None:
+                    raise ValueError('Sensor not found; add an IMU in the robot Pose panel')
+                return sensor
             if method in ('pose', 'servos', 'servo_angles'):
                 if actor is None:
                     raise ValueError('This target has no joints; use ctx.set_position or ctx.apply_force')
