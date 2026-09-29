@@ -72,6 +72,50 @@ def validate_motions(items, world=None):
     return result
 
 
+CONTROL_COLORS = ('green', 'blue', 'amber', 'red', 'violet', 'grey')
+
+
+def validate_controls(items):
+    """Console buttons: a name plus a sequence of Petoi commands or saved Studio functions."""
+    if not isinstance(items, list) or len(items) > 60:
+        raise ValueError('The console holds at most 60 custom buttons')
+    result = []
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError('Invalid console button')
+        name = str(raw.get('name', '')).strip()[:40]
+        if not name:
+            raise ValueError('Every console button needs a name')
+        color = raw.get('color', 'green')
+        if color not in CONTROL_COLORS:
+            raise ValueError('Unknown console button colour')
+        steps = raw.get('steps')
+        if not isinstance(steps, list) or not 1 <= len(steps) <= 30:
+            raise ValueError(f'“{name}” needs between 1 and 30 steps')
+        clean = []
+        for step in steps:
+            if not isinstance(step, dict) or step.get('kind') not in ('command', 'motion'):
+                raise ValueError(f'“{name}” contains an invalid step')
+            wait = int(step.get('wait_ms', 0))
+            if not 0 <= wait <= 60000:
+                raise ValueError('Step waits must be 0–60000 ms')
+            if step['kind'] == 'command':
+                command = str(step.get('command', '')).strip()
+                if not command or len(command) > 64 or any(not ' ' <= ch <= '~' for ch in command):
+                    raise ValueError(f'“{name}” has a command that is not a printable Petoi command')
+                clean.append({'kind': 'command', 'command': command, 'wait_ms': wait})
+            else:
+                motion_id = str(step.get('motion_id', ''))[:64]
+                if not motion_id:
+                    raise ValueError(f'“{name}” has a Studio function step without a function')
+                clean.append({'kind': 'motion', 'motion_id': motion_id, 'wait_ms': wait})
+        result.append({'id': str(raw.get('id') or uuid.uuid4().hex)[:64], 'name': name, 'color': color,
+                       'repeat': bool(raw.get('repeat', False)), 'steps': clean})
+    if len({item['id'] for item in result}) != len(result):
+        raise ValueError('Console button IDs must be unique')
+    return result
+
+
 def checkpoint():
     if AUTOSAVE:
         temporary = DATA / 'studio-session.tmp'
@@ -321,7 +365,7 @@ async def import_asset(file: UploadFile = File(...), mode: str = 'replace'):
 def get_project():
     with sim.lock:
         return {'format': 'bittle-studio', 'version': 1, 'xml': sim.xml, 'directory': asset_url(sim.directory / 'placeholder').rsplit('/', 1)[0],
-                **{k: v for k, v in sim.model().items() if k in ('objects', 'frames', 'mapping', 'fixed', 'gravity', 'friction', 'targets', 'physics_hz', 'motion_hz', 'direction', 'scripts', 'motions', 'robot_position', 'robot_rotation')},
+                **{k: v for k, v in sim.model().items() if k in ('objects', 'frames', 'mapping', 'fixed', 'gravity', 'friction', 'targets', 'physics_hz', 'motion_hz', 'direction', 'scripts', 'motions', 'controls', 'robot_position', 'robot_rotation')},
                 'sensors': sim.sensors,
                 'actors': [a.actor_definition() for a in sim.actors.values()]}
 
@@ -347,6 +391,7 @@ def load_project(body: dict):
             candidate.add_sensor(sensor)
         candidate.scripts = validate_scripts(body.get('scripts', []))
         candidate.motions = validate_motions(body.get('motions', []), candidate)
+        candidate.controls = validate_controls(body.get('controls', []))
         candidate.configure_rates(body.get('physics_hz', 240), body.get('motion_hz', 50), body.get('direction', 'forward'))
         for definition in body.get('actors', []):
             candidate.add_actor(definition)
@@ -455,6 +500,20 @@ def save_motion(body: dict):
         sim.motions = validate_motions([*sim.motions, item])
         checkpoint()
         return sim.motions[-1]
+
+
+@app.get('/api/controls')
+def controls():
+    with sim.lock:
+        return {'controls': sim.controls}
+
+
+@app.put('/api/controls')
+def save_controls(body: dict):
+    with sim.lock:
+        sim.controls = validate_controls(body.get('controls'))
+        checkpoint()
+        return {'controls': sim.controls}
 
 
 @app.delete('/api/motions/{motion_id}')

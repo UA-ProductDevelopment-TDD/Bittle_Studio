@@ -96,6 +96,20 @@ class WorkbenchTest(unittest.TestCase):
         self.assertEqual(c.post('/api/export', json={'mapping': mapping}).status_code, 400)
         self.assertEqual(c.post('/api/project', json=initial).status_code, 200)
 
+    def test_console_buttons(self):
+        c = self.client
+        button = {'name': 'Greet', 'color': 'blue', 'repeat': False,
+                  'steps': [{'kind': 'command', 'command': 'khi', 'wait_ms': 1800}, {'kind': 'motion', 'motion_id': 'abc', 'wait_ms': 0}]}
+        saved = c.put('/api/controls', json={'controls': [button]})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertTrue(saved.json()['controls'][0]['id'])
+        self.assertEqual(c.get('/api/controls').json()['controls'][0]['steps'][0]['command'], 'khi')
+        self.assertEqual(c.get('/api/project').json()['controls'][0]['name'], 'Greet')
+        for bad in ({**button, 'steps': []}, {**button, 'color': 'pink'}, {**button, 'steps': [{'kind': 'command', 'command': 'ké', 'wait_ms': 0}]},
+                    {**button, 'steps': [{'kind': 'command', 'command': 'ksit', 'wait_ms': 70000}]}):
+            self.assertEqual(c.put('/api/controls', json={'controls': [bad]}).status_code, 400)
+        c.put('/api/controls', json={'controls': []})
+
     def test_import_and_rejection(self):
         c = self.client
         result = c.post('/api/import', files={'file': ('triangle.obj', b'v 0 0 0\nv .1 0 0\nv 0 .1 0\nf 1 2 3\n')})

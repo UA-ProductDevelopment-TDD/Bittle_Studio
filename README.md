@@ -53,9 +53,10 @@ Web Bluetooth and Web Serial require a compatible Chromium browser such as Chrom
 
 ### Developer mode, functions and voice
 
-The Bluetooth dialog now has three tabs that share one BLE/serial connection:
+The Bluetooth dialog now has four tabs that share one BLE/serial connection:
 
 - **Connection** contains direct timeline playback and **Developer mode**. Developer mode is selected by default. When the connection opens, Studio sends `gb` to turn off the firmware's balance/gyro assistance and blocks background voice actions. Explicit timeline playback, library buttons and terminal commands remain available. Turning developer mode off sends `gB` to restore balance assistance. Disconnecting leaves the checkbox ready for the next connection. The activity log distinguishes the first `K` upload from instant `T` replays.
+- **Console** is a controller in the style of the Petoi app. It has a gait selector with a direction pad (■ sends `kbalance`) plus posture, head and skill buttons. **My buttons** holds composed skills. Each one is a named, coloured sequence of Petoi commands and saved Studio functions, with a wait after every step, and can repeat until stopped. Build one with **+ New button**: add steps by hand, or tick **Record presses** and tap the pad and grids. Pressing any other console button or **Stop** interrupts a running sequence. Buttons are saved in autosave and project JSON.
 - **Functions** includes the Petoi posture, trick and gait catalog used by Bittle AI Voice. A gait keeps running in firmware until **Stop** sends `kbalance`. **My Studio functions** saves a copy of the current timeline with its pose/behavior/gait type, Hz, speed and order. Saved functions are included in autosave and project JSON; they can be loaded back into the editor, sent directly, or deleted.
 - **Voice** adds the optional Bobby Realtime voice companion from the merged workflow. Enter an OpenAI API key once per server run. The key is kept only in server memory and the browser audio connection uses WebRTC. Voice can talk without a robot, but physical actions require the shared hardware connection and are blocked whenever developer mode is active. Starting voice requires internet access and may incur OpenAI API usage charges.
 

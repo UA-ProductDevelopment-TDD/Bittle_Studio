@@ -117,6 +117,7 @@ class Simulation:
         self.actors = {}
         self.scripts = []
         self.motions = []
+        self.controls = []
         self.sensors = []
         self.sensor_values = {}
         self._sensor_velocities = {}
@@ -565,4 +566,4 @@ class Simulation:
                 'robot_position': self.home_position, 'robot_rotation': self.home_rotation,
                 'sensors': self.sensors, 'links': list(self.links),
                 'actors': [a.actor_definition(True) for a in self.actors.values()], 'scripts': self.scripts,
-                'motions': self.motions}
+                'motions': self.motions, 'controls': self.controls}
