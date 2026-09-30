@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bittle Link</title>
+<link rel="stylesheet" href="./base.css">
+<link rel="stylesheet" href="./console.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="brand-mark">B</span><div>Bittle Link<small>ROBOT CONSOLE</small></div></div>
+  <div class="connection">
+    <select id="transport" aria-label="Connection type"><option value="ble">Bluetooth BLE</option><option value="serial">Bluetooth / USB serial</option><option value="test">Test mode · no robot</option></select>
+    <button id="connect" class="primary">Connect Bittle</button>
+    <button id="disconnect" disabled>Disconnect</button>
+    <label class="check" title="Sends gb on connect to turn off gyro/balance assistance; gB turns it back on."><input id="developerMode" type="checkbox" checked> Gyro off (developer mode)</label>
+  </div>
+</header>
+<main>
+  <section class="panel"><div id="console"></div></section>
+  <section class="panel">
+    <details open><summary>Terminal &amp; log</summary>
+      <form id="terminal" class="terminal"><input id="command" maxlength="64" placeholder="Any Petoi command, for example ksit or m 0 30" aria-label="Petoi command"><button id="send" disabled>Send</button></form>
+      <pre id="log" class="log" aria-live="polite"></pre>
+    </details>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

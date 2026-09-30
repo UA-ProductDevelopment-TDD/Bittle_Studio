@@ -180,6 +180,18 @@ class CodeWorkbenchTest(unittest.TestCase):
         self.assertEqual(samples.json()['metadata']['hz'], 25)
         project = self.c.get('/api/project').json()
         self.assertTrue(any(m['id'] == item['id'] for m in project['motions']))
+        # A Bittle Link pack carries buttons plus each saved motion compiled to the same firmware skill.
+        button = {'name': 'Wave twice', 'steps': [{'kind': 'motion', 'motion_id': item['id'], 'wait_ms': 500}, {'kind': 'command', 'command': 'kbalance', 'wait_ms': 0}]}
+        self.assertEqual(self.c.put('/api/controls', json={'controls': [button]}).status_code, 200)
+        pack = self.c.post('/api/controls/pack', json={'mapping': mapping})
+        self.assertEqual(pack.status_code, 200, pack.text)
+        pack = pack.json()
+        self.assertEqual((pack['format'], pack['version']), ('bittle-link-pack', 1))
+        self.assertEqual(pack['controls'][0]['steps'][0]['motion_id'], item['id'])
+        compiled = next(s for s in pack['skills'] if s['id'] == item['id'])
+        direct = self.c.post(f"/api/motions/{item['id']}/skill", json={'mapping': mapping}).json()
+        self.assertEqual((compiled['skill'], compiled['signature']), (direct['skill'], direct['metadata']['signature']))
+        self.c.put('/api/controls', json={'controls': []})
         self.assertEqual(self.c.delete(f"/api/motions/{item['id']}").status_code, 200)
         self.assertFalse(any(m['id'] == item['id'] for m in self.c.get('/api/motions').json()['motions']))
 

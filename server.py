@@ -559,22 +559,45 @@ def saved_motion_samples(motion_id: str, body: dict):
         return {'samples': samples, 'metadata': metadata}
 
 
+def compile_saved_motion(item, body):
+    """Firmware skill for a saved motion; the caller holds sim.lock."""
+    original, original_targets = sim.frames, sim.targets
+    try:
+        sim.set_frames(item['frames'])
+        sim.targets = item['pose'].copy()
+        skill, mapping, metadata = firmware_skill(sim, {**item, **body})
+        sim.mapping = mapping
+    finally:
+        sim.frames, sim.targets = original, original_targets
+    return skill, metadata
+
+
 @app.post('/api/motions/{motion_id}/skill')
 def saved_motion_skill(motion_id: str, body: dict):
     with sim.lock:
         item = next((item for item in sim.motions if item['id'] == motion_id), None)
         if item is None:
             raise ValueError('Saved motion not found')
-        original, original_targets = sim.frames, sim.targets
-        try:
-            sim.set_frames(item['frames'])
-            sim.targets = item['pose'].copy()
-            skill, mapping, metadata = firmware_skill(sim, {**item, **body})
-            sim.mapping = mapping
-        finally:
-            sim.frames, sim.targets = original, original_targets
+        skill, metadata = compile_saved_motion(item, body)
         checkpoint()
         return {'skill': skill, 'metadata': metadata}
+
+
+@app.post('/api/controls/pack')
+def controls_pack(body: dict):
+    """Bittle Link pack: console buttons plus every saved motion compiled to a firmware skill,
+    so a standalone console can run them without this server."""
+    with sim.lock:
+        skills = []
+        for item in sim.motions:
+            try:
+                skill, metadata = compile_saved_motion(item, body)
+            except ValueError as error:
+                raise ValueError(f'Studio function “{item["name"]}” cannot be exported: {error}') from error
+            skills.append({'id': item['id'], 'name': item['name'], 'motion_type': item['motion_type'],
+                           'type': metadata['type'], 'signature': metadata['signature'], 'skill': skill})
+        checkpoint()
+        return {'format': 'bittle-link-pack', 'version': 1, 'controls': sim.controls, 'skills': skills}
 
 
 @app.get('/api/voice/config')

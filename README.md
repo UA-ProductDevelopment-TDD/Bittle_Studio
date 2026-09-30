@@ -62,6 +62,25 @@ The Bluetooth dialog now has four tabs that share one BLE/serial connection:
 
 Use **Test mode** to verify the developer-state commands, built-in skills, saved functions and voice tool routing before connecting a physical Bittle. The activity log should show `gb` when developer mode starts, `gB` when it ends, and `TEST` for every command that would have been sent.
 
+### Bittle Link: the robot console on its own
+
+The connection, protocol and console are a separate module in `web/bittle-link/`. It imports nothing from the rest of Studio, and Studio's Bluetooth dialog is built on it. The same module also runs without the simulator:
+
+- Double-click **bittle-link.cmd**, or run `python bittle_link.py`. This needs only Python's standard library (no PyBullet or `.venv` packages). It serves the console at **http://127.0.0.1:8770** and opens the browser. Use `--port` to pick another port and `--no-browser` to skip opening one.
+- From a running Studio, **Console → Open standalone ↗** opens the same page.
+
+The standalone console has the connection bar, gait pad, posture and skill grids, **My buttons**, a terminal and the log. Its buttons are kept in that browser's storage.
+
+Buttons that use Studio functions travel as a **pack**. In Studio, **Console → Export pack** downloads `bittle-link-pack.json`. The pack contains the buttons plus every saved Studio function, compiled to the firmware skill that Studio itself would upload. Every servo in **Export motion** must be verified first. In Bittle Link, **Import pack** merges them in, and you can then compose new buttons from those functions as well.
+
+Module files:
+
+- `link.js`: `createLink()` returns the transport and protocol object (`connect('ble' | 'serial' | 'test')`, `sendCommand`, `sendPose`, `sendSkill`, `runSequence`, `stop`, `setDeveloperMode`). It emits `log` and `state` events and has no DOM code, so another page or tool can reuse it.
+- `console.js`: `initConsole(element, {link, store, library, tools})` draws the controller into any element. The host decides where buttons are stored and how Studio functions are resolved.
+- `pack.js`: the pack format, button validation (the same rules as `server.py`) and browser storage for the standalone page.
+- `catalog.js`: the Petoi skill catalog, which `petoi-skills.js` re-exports for voice.
+- `index.html`, `app.js`, `base.css`, `console.css`: the standalone page.
+
 References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial protocol](https://docs.petoi.com/apis/serial-protocol), [skill data format](https://docs.petoi.com/applications/skill-creation). Inspiration: [Petoi Bittle X simulator](https://bittlex-sim.petoi.com/) and [Bittle AI voice](https://github.com/UA-ProductDevelopment-TDD/Bittle_AI_voice).
 
 ## Physics assumptions and limits
@@ -81,6 +100,7 @@ References: [Petoi Python API](https://docs.petoi.com/apis/python-api), [serial 
 - `engine.py`: Bullet world, URDF loading/diagnostics, collision objects, motor control, interpolation and state.
 - `server.py`: local API, import pipeline, project serialization, saved function library, voice session endpoint and Python export.
 - `web/`: viewport, scene editor, timeline and inspector; no build step.
+- `web/bittle-link/` and `bittle_link.py`: the standalone robot connection and console module (see above).
 - `tests/test_workbench.py`: end-to-end physics and API checks.
 
 Run `.venv/Scripts/python.exe -m unittest discover -s tests -v` and `node --check web/app.js && node --check web/hardware.js && node --check web/voice.js`.
