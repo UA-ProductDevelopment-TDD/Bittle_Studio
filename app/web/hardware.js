@@ -1,7 +1,7 @@
 import {catalog} from './bittle-link/catalog.js';
 import {createLink} from './bittle-link/link.js';
 import {initConsole} from './bittle-link/console.js';
-import {downloadJson} from './bittle-link/pack.js';
+import {saveFolderPack} from './bittle-link/pack.js';
 
 // Studio glue for the Bittle Link module: timeline playback, the function library and the developer-mode panel.
 // The connection, protocol and console live in web/bittle-link and also run standalone.
@@ -55,7 +55,12 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     store: {load: async () => (await api('/api/controls')).controls, save: async controls => (await api('/api/controls', {controls}, 'PUT')).controls},
     library: {list: () => motions, resolve: resolveMotion},
     tools: [
-      {label: 'Export pack', title: 'Download these buttons and your Studio functions for the standalone Bittle Link console', onClick: async () => { downloadJson(await api('/api/controls/pack', {mapping: getMapping()}), 'bittle-link-pack.json'); toast('Pack downloaded. Import it in Bittle Link.'); }},
+      {label: 'Save pack', title: 'Save these buttons and your Studio functions to the saved-motions folder for Bittle Link', onClick: async () => {
+        const name = prompt('Name for this pack (saved in the saved-motions folder; the same name replaces the older file):', 'my-bittle-moves');
+        if (!name) return;
+        const saved = await saveFolderPack(name, await api('/api/controls/pack', {mapping: getMapping()}));
+        toast(`Saved saved-motions/${saved.file} · ${saved.controls} buttons, ${saved.skills} Studio functions.`);
+      }},
       {label: 'Open standalone ↗', title: 'Open the Bittle Link console in its own tab (no simulator needed)', onClick: () => window.open('/web/bittle-link/index.html','_blank', 'noopener')},
     ],
   });

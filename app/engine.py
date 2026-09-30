@@ -11,9 +11,17 @@ import numpy as np
 import pybullet as p
 import xacro
 
-ROOT = Path(__file__).parent.resolve()
-DATA = ROOT / 'data'
+ROOT = Path(__file__).parent.resolve()          # app/: source code
+PROJECT = ROOT.parent                           # repository root
+ASSETS = PROJECT / 'robot-models'               # bundled robot models, served as /assets
+DATA = PROJECT / 'user-data'                    # imports, autosave and script runs, served as /data
+SAVED_MOTIONS = PROJECT / 'saved-motions'       # Bittle Link packs
+if not DATA.exists() and (PROJECT / 'data').is_dir():
+    (PROJECT / 'data').rename(DATA)             # keep sessions from before the folder reorganisation
 DATA.mkdir(exist_ok=True)
+SAVED_MOTIONS.mkdir(exist_ok=True)
+# Saved projects store these URL prefixes, so they stay fixed even when folders move on disk.
+URL_ROOTS = {'assets': ASSETS, 'data': DATA}
 
 
 def vector(text, default=(0, 0, 0)):
@@ -25,16 +33,24 @@ def vector(text, default=(0, 0, 0)):
 
 def asset_url(path):
     path = Path(path).resolve()
-    for folder in ('assets', 'data'):
-        base = ROOT / folder
+    for prefix, base in URL_ROOTS.items():
         if path.is_relative_to(base):
-            return '/' + folder + '/' + path.relative_to(base).as_posix()
-    raise ValueError('Mesh must be inside the project assets or data directory')
+            return '/' + prefix + '/' + path.relative_to(base).as_posix()
+    raise ValueError('Mesh must be inside the project robot-models or user-data directory')
+
+
+def url_path(url):
+    """Disk location of an /assets/... or /data/... URL."""
+    prefix, _, rest = url.lstrip('/').partition('/')
+    if prefix not in URL_ROOTS:
+        raise ValueError('Path must start with /assets or /data: ' + url)
+    path = (URL_ROOTS[prefix] / rest).resolve()
+    asset_url(path)
+    return path
 
 
 def asset_path(url):
-    path = (ROOT / url.lstrip('/')).resolve()
-    asset_url(path)
+    path = url_path(url)
     if not path.is_file():
         raise ValueError('Asset not found: ' + url)
     return path
@@ -42,7 +58,7 @@ def asset_path(url):
 
 def _content_root(directory):
     directory = Path(directory).resolve()
-    for base in (DATA, ROOT / 'assets'):
+    for base in (DATA, ASSETS):
         if directory.is_relative_to(base):
             parts = directory.relative_to(base).parts
             return base / parts[0] if parts else base
@@ -143,7 +159,7 @@ class Simulation:
             p.setPhysicsEngineParameter(numSolverIterations=80, physicsClientId=self.client)
             self.ground = p.createMultiBody(0, p.createCollisionShape(p.GEOM_PLANE, physicsClientId=self.client), physicsClientId=self.client)
             p.changeDynamics(self.ground, -1, lateralFriction=self.friction, physicsClientId=self.client)
-        self.load_robot(xml or (ROOT / 'assets/bittle/bittle.urdf').read_text(), directory or ROOT / 'assets/bittle')
+        self.load_robot(xml or (ASSETS / 'bittle/bittle.urdf').read_text(), directory or ASSETS / 'bittle')
 
     def load_robot(self, xml, directory):
         xml = expand_robot_xml(xml, directory)
@@ -459,7 +475,7 @@ class Simulation:
         return position
 
     def add_actor(self, definition):
-        directory = (ROOT / definition['directory'].lstrip('/')).resolve()
+        directory = url_path(definition['directory'])
         asset_url(directory / 'placeholder')
         auto_ground = 'position' not in definition or bool(definition.get('place_on_ground', False))
         position = vector(' '.join(map(str, definition.get('position', [.35, 0, .2]))))

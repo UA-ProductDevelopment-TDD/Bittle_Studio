@@ -1,4 +1,4 @@
-"""Bittle Studio: local HTTP interface. Run with launch.cmd."""
+"""Bittle Studio: local HTTP interface. Run with launch-studio.cmd (app/launcher.py)."""
 import io
 import json
 import math
@@ -18,9 +18,10 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from engine import DATA, ROOT, Simulation, asset_path, asset_url, vector
+from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, url_path, vector
 from motion_export import build_motion, firmware_skill, python_motion
 from scripting import ScriptRunner, validate_scripts
+from packs import list_packs, pack_path, save_pack, validate_controls
 
 sim = None
 runner = None
@@ -69,50 +70,6 @@ def validate_motions(items, world=None):
         result.append(item)
     if len({item['id'] for item in result}) != len(result):
         raise ValueError('Saved motion IDs must be unique')
-    return result
-
-
-CONTROL_COLORS = ('green', 'blue', 'amber', 'red', 'violet', 'grey')
-
-
-def validate_controls(items):
-    """Console buttons: a name plus a sequence of Petoi commands or saved Studio functions."""
-    if not isinstance(items, list) or len(items) > 60:
-        raise ValueError('The console holds at most 60 custom buttons')
-    result = []
-    for raw in items:
-        if not isinstance(raw, dict):
-            raise ValueError('Invalid console button')
-        name = str(raw.get('name', '')).strip()[:40]
-        if not name:
-            raise ValueError('Every console button needs a name')
-        color = raw.get('color', 'green')
-        if color not in CONTROL_COLORS:
-            raise ValueError('Unknown console button colour')
-        steps = raw.get('steps')
-        if not isinstance(steps, list) or not 1 <= len(steps) <= 30:
-            raise ValueError(f'“{name}” needs between 1 and 30 steps')
-        clean = []
-        for step in steps:
-            if not isinstance(step, dict) or step.get('kind') not in ('command', 'motion'):
-                raise ValueError(f'“{name}” contains an invalid step')
-            wait = int(step.get('wait_ms', 0))
-            if not 0 <= wait <= 60000:
-                raise ValueError('Step waits must be 0–60000 ms')
-            if step['kind'] == 'command':
-                command = str(step.get('command', '')).strip()
-                if not command or len(command) > 64 or any(not ' ' <= ch <= '~' for ch in command):
-                    raise ValueError(f'“{name}” has a command that is not a printable Petoi command')
-                clean.append({'kind': 'command', 'command': command, 'wait_ms': wait})
-            else:
-                motion_id = str(step.get('motion_id', ''))[:64]
-                if not motion_id:
-                    raise ValueError(f'“{name}” has a Studio function step without a function')
-                clean.append({'kind': 'motion', 'motion_id': motion_id, 'wait_ms': wait})
-        result.append({'id': str(raw.get('id') or uuid.uuid4().hex)[:64], 'name': name, 'color': color,
-                       'repeat': bool(raw.get('repeat', False)), 'steps': clean})
-    if len({item['id'] for item in result}) != len(result):
-        raise ValueError('Console button IDs must be unique')
     return result
 
 
@@ -381,7 +338,7 @@ def load_project(body: dict):
         candidate.fixed = bool(body.get('fixed', False))
         candidate.home_position = vector(' '.join(map(str, body.get('robot_position', [0, 0, .2]))))
         candidate.home_rotation = vector(' '.join(map(str, body.get('robot_rotation', [0, 0, 0]))))
-        directory = (ROOT / body['directory'].lstrip('/')).resolve()
+        directory = url_path(body['directory'])
         asset_url(directory / 'placeholder')
         candidate.load_robot(body['xml'], directory)
         candidate.set_frames(body.get('frames', []))
@@ -600,6 +557,24 @@ def controls_pack(body: dict):
         return {'format': 'bittle-link-pack', 'version': 1, 'controls': sim.controls, 'skills': skills}
 
 
+@app.get('/saved-motions/index.json')
+def saved_motion_packs():
+    return {'packs': list_packs(SAVED_MOTIONS)}
+
+
+@app.get('/saved-motions/{filename}')
+def saved_motion_pack(filename: str):
+    path = pack_path(SAVED_MOTIONS, filename)
+    if not path.is_file():
+        raise HTTPException(404, 'Pack not found')
+    return FileResponse(path, media_type='application/json')
+
+
+@app.post('/saved-motions/save')
+def save_motion_pack(body: dict):
+    return save_pack(SAVED_MOTIONS, body.get('name', ''), body.get('pack'))
+
+
 @app.get('/api/voice/config')
 def voice_config():
     return {'configured': bool(voice_api_key), 'model': VOICE_MODEL}
@@ -718,7 +693,7 @@ def delete_actor(actor_id: str):
 
 
 app.mount('/web', StaticFiles(directory=ROOT / 'web'), name='web')
-app.mount('/assets', StaticFiles(directory=ROOT / 'assets'), name='assets')
+app.mount('/assets', StaticFiles(directory=ASSETS), name='assets')
 app.mount('/data', StaticFiles(directory=DATA), name='data')
 app.mount('/vendor', StaticFiles(directory=ROOT / 'node_modules/three'), name='vendor')
 

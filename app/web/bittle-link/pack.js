@@ -68,6 +68,17 @@ export function createLocalStore(key = 'bittle-link') {
   };
 }
 
+// The saved-motions/ folder, served by both Bittle Studio and the Bittle Link launcher.
+async function folderRequest(url, options) {
+  const response = await fetch(url, options);
+  let data; try { data = await response.json(); } catch { data = {}; }
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'The saved-motions folder is not available.');
+  return data;
+}
+export const listFolderPacks = async () => (await folderRequest('/saved-motions/index.json')).packs;
+export const loadFolderPack = file => folderRequest(`/saved-motions/${encodeURIComponent(file)}`);
+export const saveFolderPack = (name, pack) => folderRequest('/saved-motions/save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, pack})});
+
 export function downloadJson(data, filename) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], {type: 'application/json'}));
   const a = Object.assign(document.createElement('a'), {href: url, download: filename}); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);

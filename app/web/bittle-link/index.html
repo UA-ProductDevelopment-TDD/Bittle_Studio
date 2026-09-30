@@ -26,6 +26,12 @@
     </details>
   </section>
 </main>
+<dialog id="importDialog" aria-labelledby="importTitle">
+  <div class="dialog-head"><h2 id="importTitle">Import a pack</h2><button type="button" data-close aria-label="Close">×</button></div>
+  <p class="note">Packs in the <code>saved-motions</code> folder. Bittle Studio saves there with <b>Console → Save pack</b>.</p>
+  <div id="packList" class="pack-list"></div>
+  <div class="dialog-foot"><button type="button" id="importFile">From another file…</button></div>
+</dialog>
 <div id="toast" role="status"></div>
 <script type="module" src="./app.js"></script>
 </body>
