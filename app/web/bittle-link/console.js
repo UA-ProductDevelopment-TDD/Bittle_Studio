@@ -9,6 +9,8 @@ const GAITS = [['wk', 'Walk'], ['tr', 'Trot'], ['cr', 'Crawl'], ['gp', 'Gallop']
 const PAD = [['↖', 'L', 'Forward left'], ['↑', 'F', 'Forward'], ['↗', 'R', 'Forward right'], ['⟲', 'kvtL', 'Turn left on the spot'], ['■', 'kbalance', 'Stop'], ['⟳', 'kvtR', 'Turn right on the spot'], ['↙', 'kbkL', 'Back left'], ['↓', 'kbk', 'Back'], ['↘', 'kbkR', 'Back right']];
 const POSTURES = [['kbalance', 'Balance'], ['kup', 'Stand up'], ['ksit', 'Sit'], ['krest', 'Rest'], ['kstr', 'Stretch'], ['kbuttUp', 'Butt up'], ['kzero', 'Zero'], ['kcalib', 'Calibrate'], ['m 0 30', 'Look left'], ['m 0 0', 'Look ahead'], ['m 0 -30', 'Look right']];
 const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['kgdb', 'Goodbye'], ['khg', 'Hug'], ['kchr', 'Cheer'], ['knd', 'Nod'], ['kwh', 'Head wave'], ['ksnf', 'Sniff'], ['kscrh', 'Scratch'], ['kck', 'Check'], ['kdg', 'Dig'], ['kpee', 'Pee'], ['kpu', 'Push-ups'], ['kpu1', 'One-arm push-up'], ['kbx', 'Box'], ['kkc', 'Kick'], ['kjmp', 'Jump'], ['kmw', 'Moonwalk'], ['kts', 'Twist'], ['kzz', 'Zigzag'], ['krl', 'Roll'], ['kpd', 'Play dead'], ['krc', 'Recover'], ['kff', 'Front flip', true], ['kbf', 'Back flip', true]];
+// Petoi voice command module: XAc enables its reply tone and reactions, XAd silences and disables them.
+const MODULES = [['XAc', 'Voice module on'], ['XAd', 'Voice module off']];
 export const COLORS = ['green', 'blue', 'amber', 'red', 'violet', 'grey'];
 const WALKING = new Set(catalog.filter(item => item.walking).map(item => item.code));
 let datalistCount = 0;
@@ -16,7 +18,7 @@ let datalistCount = 0;
 const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
 <div class="console-layout"><div class="console-drive"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
-<div class="console-actions"><h4>Postures</h4><div data-part="postures" class="console-grid"></div><h4>Skills</h4><div data-part="skills" class="console-grid"></div></div></div>
+<div class="console-actions"><h4>Postures</h4><div data-part="postures" class="console-grid"></div><h4>Skills</h4><div data-part="skills" class="console-grid"></div><h4>Voice module</h4><div data-part="modules" class="console-grid"></div></div></div>
 <div class="console-custom-head"><div><h4>My buttons</h4><p data-part="hint" class="note"></p></div><div class="console-tools"><span data-part="tools"></span><label class="check"><input data-part="editMode" type="checkbox"> Edit buttons</label></div></div><div data-part="custom" class="console-grid custom-grid"></div>
 <form data-part="editor" class="console-editor hidden"><div class="editor-head"><h4 data-part="editorTitle">New button</h4><span data-part="summary" class="note"></span></div>
 <div class="editor-fields"><label>Name<input data-part="name" maxlength="40" placeholder="For example: Greet and sit"></label><div class="editor-colors"><span>Colour</span><div data-part="colors"></div></div><label class="check"><input data-part="repeat" type="checkbox"> Repeat until stopped</label></div>
@@ -48,6 +50,7 @@ export function initConsole(root, {link, toast = message => console.warn(message
     part('pad').replaceChildren(...PAD.map(([glyph, code, title]) => { const command = code.length === 1 ? `k${gait}${code}` : code; return button(glyph, `${title} · ${command}`, () => press(command, title), code === 'kbalance' ? 'pad-stop' : ''); }));
     part('postures').replaceChildren(...POSTURES.map(([code, label]) => button(label, code, () => press(code, label))));
     part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label), risky ? 'risky' : '')));
+    part('modules').replaceChildren(...MODULES.map(([code, label]) => button(label, `${code} · Petoi voice command module`, () => press(code, label))));
     part('tools').replaceChildren(...tools.map(tool => button(tool.label, tool.title, () => Promise.resolve(tool.onClick()).catch(fail))));
   }
   function renderControls() {
