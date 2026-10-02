@@ -11,15 +11,26 @@ def build_motion(sim, body, hardware=True):
     if motion_type != 'pose' and len(sim.frames) < 2:
         raise ValueError('Add at least two keyframes before exporting a behavior or gait')
     mapping = body.get('mapping', sim.mapping)
-    used = set()
+    used, problems = set(), []
     for joint in sim.joints:
         m = mapping.get(joint['name'], {})
         servo = m.get('servo', -1)
-        if (hardware and not m.get('verified')) or not isinstance(servo, int) or not 0 <= servo <= 15 or servo in used or m.get('sign') not in (-1, 1):
-            raise ValueError('Verify a unique servo index (0–15) and direction for every joint')
+        name = joint['name'].replace('-joint', '').replace('-', ' ')
+        if not isinstance(servo, int) or not 0 <= servo <= 15:
+            problems.append(f'{name} (no servo number)')
+        elif servo in used:
+            problems.append(f'{name} (servo {servo} used twice)')
+        elif m.get('sign') not in (-1, 1):
+            problems.append(f'{name} (no direction)')
+        elif hardware and not m.get('verified'):
+            problems.append(f'{name} (not verified)')
         if not math.isfinite(float(m.get('offset', 0))):
             raise ValueError('Servo offsets must be finite')
         used.add(servo)
+    if problems:
+        # The wording "Verify a unique servo index" is kept so older notes and searches still match.
+        raise ValueError('Verify a unique servo index (0–15) and direction for every joint. '
+                         'Open Servo setup in the top bar for: ' + ', '.join(problems))
     hz = float(body.get('hz', sim.motion_hz))
     speed = float(body.get('speed', .5))
     direction = body.get('direction', sim.direction)

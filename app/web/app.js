@@ -13,7 +13,7 @@ let toastTimer, pendingPose = {}, poseTimer;
 let codePanel, hardwarePanel, selectedActor=null, mainSelected=true, gizmoTarget='robot', robotDrag=null, editorTarget='main';
 const robotLinks = new Map(), objectMeshes = new Map(), meshCache = new Map();
 function toast(message, error = false) {
-  const dialog=document.querySelector('dialog[open]');
+  const dialog=document.querySelector('dialog[open]:modal');
   if(dialog){let status=dialog.querySelector('.dialog-status');if(!status){status=document.createElement('p');status.className='dialog-status';status.setAttribute('role','status');dialog.append(status);}status.textContent=message;status.style.color=error?'#ffc6bc':'#c0e581';status.scrollIntoView({block:'nearest'});}
   $('toast').textContent = message; $('toast').className = 'show' + (error ? ' error' : '');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').className = '', error ? 11000 : 5000);
@@ -262,13 +262,53 @@ on('frameTime',()=>robotCommand('seek',{time:Number($('frameTime').value)}),'cha
 on('saveProject',async()=>{await codePanel?.save();await flushPose();download('bittle-experiment.json',await api('/api/project'));toast('Project saved. Keep this installation’s data folder with imported assets.');});
 on('openProject',()=>$('projectFile').click());on('projectFile',async()=>{const f=$('projectFile').files[0];if(!f)return;await api('/api/project',JSON.parse(await f.text()));await refresh();codePanel?.reload();focusRobot();$('projectFile').value='';toast('Project restored.');},'change');
 on('help',()=>$('helpDialog').showModal());
-on('export',()=>{const robot=timelineModel();$('exportHz').value=$('motionHz').value;$('exportDirection').value=$('motionDirection').value;mapping=structuredClone(robot.mapping);$('mapping').replaceChildren();for(const j of robot.joints){const m=mapping[j.name];const row=document.createElement('div');row.className='mapping-row';const name=document.createElement('span');name.textContent=label(j.name);const servo=document.createElement('input');servo.type='number';servo.min=0;servo.max=15;servo.value=m.servo;servo.setAttribute('aria-label',label(j.name)+' servo index');const sign=document.createElement('select');sign.innerHTML='<option value="1">+1</option><option value="-1">−1</option>';sign.value=m.sign;sign.setAttribute('aria-label',label(j.name)+' direction');const offset=document.createElement('input');offset.type='number';offset.value=m.offset;offset.setAttribute('aria-label',label(j.name)+' offset');const verified=document.createElement('input');verified.type='checkbox';verified.checked=m.verified;verified.setAttribute('aria-label',label(j.name)+' mapping verified');servo.onchange=()=>{m.servo=Number(servo.value);m.verified=verified.checked=false;};sign.onchange=()=>{m.sign=Number(sign.value);m.verified=verified.checked=false;};offset.onchange=()=>{m.offset=Number(offset.value);m.verified=verified.checked=false;};verified.onchange=()=>m.verified=verified.checked;row.append(name,servo,sign,offset,verified);$('mapping').append(row);}$('exportDialog').showModal();});
+let mappingSaveTimer;
+function saveMapping(){clearTimeout(mappingSaveTimer);mappingSaveTimer=setTimeout(async()=>{try{const result=await api('/api/mapping',{target:timelineTarget,mapping});timelineModel().mapping=structuredClone(result.mapping);}catch(e){toast(e.message,true);}},250);}
+async function testJoint(j,m,button){
+  // Move the simulated joint and the mapped real servo +10° (or -10° near the upper limit) and back, so both can be compared.
+  const robot=timelineModel(),start=Number(robot.targets?.[j.name]??0),delta=start+10<=j.upper?10:-10,hw=window.bittleHardware,live=hw?.status().connected;
+  const servoAngle=v=>Math.round(m.sign*v+Number(m.offset||0));
+  if(live&&!(Number.isInteger(m.servo)&&m.servo>=0&&m.servo<=15))throw new Error('Give this joint a servo number first.');
+  button.disabled=true;
+  try{
+    await robotCommand('pose',{pose:{[j.name]:start+delta}});if(live)await hw.sendCommand(`i ${m.servo} ${servoAngle(start+delta)}`);
+    await new Promise(r=>setTimeout(r,900));
+    await robotCommand('pose',{pose:{[j.name]:start}});if(live)await hw.sendCommand(`i ${m.servo} ${servoAngle(start)}`);
+    toast(live?`${label(j.name)}: servo ${m.servo} moved ${delta>0?'+':''}${delta}° and back. Did the real joint match the simulation?`:`${label(j.name)} moved in the simulation. Connect in Bluetooth to move the real servo too.`);
+  }finally{button.disabled=false;}
+}
+function openServoSetup(){const robot=timelineModel();$('exportHz').value=$('motionHz').value;$('exportDirection').value=$('motionDirection').value;mapping=structuredClone(robot.mapping);$('mapping').replaceChildren();
+  for(const j of robot.joints){const m=mapping[j.name];const row=document.createElement('div');row.className='mapping-row';const name=document.createElement('span');name.textContent=label(j.name);
+    const servo=document.createElement('input');servo.type='number';servo.min=0;servo.max=15;servo.value=m.servo;servo.setAttribute('aria-label',label(j.name)+' servo index');
+    const sign=document.createElement('select');sign.innerHTML='<option value="1">+1</option><option value="-1">−1</option>';sign.value=m.sign;sign.setAttribute('aria-label',label(j.name)+' direction');
+    const offset=document.createElement('input');offset.type='number';offset.value=m.offset;offset.setAttribute('aria-label',label(j.name)+' offset');
+    const test=document.createElement('button');test.type='button';test.textContent='Test';test.title='Move this joint +10° and back, in the simulation and on the connected robot';
+    const verified=document.createElement('input');verified.type='checkbox';verified.checked=m.verified;verified.setAttribute('aria-label',label(j.name)+' mapping verified');
+    const unverify=()=>{m.verified=verified.checked=false;row.classList.remove('verified');};
+    servo.onchange=()=>{m.servo=Number(servo.value);unverify();saveMapping();};sign.onchange=()=>{m.sign=Number(sign.value);unverify();saveMapping();};offset.onchange=()=>{m.offset=Number(offset.value);unverify();saveMapping();};
+    verified.onchange=()=>{m.verified=verified.checked;row.classList.toggle('verified',m.verified);saveMapping();};
+    test.onclick=()=>testJoint(j,m,test).catch(e=>toast(e.message,true));
+    row.classList.toggle('verified',!!m.verified);row.append(name,servo,sign,offset,test,verified);$('mapping').append(row);}
+  $('exportDialog').showModal();}
+on('export',openServoSetup);on('servoSetup',openServoSetup);
 const exportBody=()=>({target:timelineTarget,mapping,motion_type:$('exportType').value,speed:Number($('exportSpeed').value),hz:Number($('exportHz').value),direction:$('exportDirection').value});
 on('exportType',()=>{$('exportLoop').checked=$('exportType').value==='gait';},'change');
 on('downloadCode',async()=>{const code=await api('/api/export',exportBody());timelineModel().mapping=structuredClone(mapping);download(label(timelineModel().name||'bittle')+'_motion.py',code,'text/x-python');toast($('exportType').value==='gait'?'Python gait exported. It repeats until Ctrl+C.':'Python motion exported. Run without flags for a dry run.');});
-document.addEventListener('keydown',e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('input,textarea,select,button,summary')||document.querySelector('dialog[open]'))return;if(e.key.toLowerCase()==='f')focusRobot();if(e.code==='Space'){e.preventDefault();$('play').click();}});
+document.addEventListener('keydown',e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('input,textarea,select,button,summary')||document.querySelector('dialog[open]:modal'))return;if(e.key.toLowerCase()==='f')focusRobot();if(e.code==='Space'){e.preventDefault();$('play').click();}});
 
 on('openCode',()=>codePanel?.show());
+// Connection status and an always-visible Stop in the top bar (fed by the Bluetooth module's state events).
+window.addEventListener('bittle-hardware-state',({detail})=>{const pill=$('connectionPill');pill.dataset.state=detail.connected?(detail.testMode?'test':'live'):'off';
+  $('connectionText').textContent=detail.connected?(detail.testMode?'Test mode':`Connected · ${detail.transport==='ble'?'BLE':'serial'}`):'Not connected';$('globalStop').classList.toggle('hidden',!detail.connected);});
+on('connectionPill',()=>$('openHardware').click());
+on('globalStop',()=>window.bittleHardware?.cancel());
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&window.bittleHardware?.status().connected)window.bittleHardware.cancel().catch(error=>toast(error.message,true));});
+// Save the current timeline as a function without opening the Bluetooth panel.
+on('saveAsFunction',()=>{if(frameList.length<1)throw new Error('Add at least one keyframe first.');$('saveFunctionType').value=frameList.length<2?'pose':'behavior';$('saveFunctionDialog').showModal();$('saveFunctionName').focus();});
+on('saveFunctionForm',async e=>{e.preventDefault();const name=$('saveFunctionName').value.trim();if(!name)return;
+  await api('/api/motions',{name,motion_type:$('saveFunctionType').value,hz:Number($('motionHz').value),speed:Number($('hardwareSpeed')?.value||.5),direction:$('motionDirection').value});
+  $('saveFunctionDialog').close();$('saveFunctionName').value='';await window.bittleHardware?.refreshMotions?.();
+  toast(`Saved “${name}”. Run it in Bluetooth → Functions, or add it to a console button.`);},'submit');
 on('objectCode',()=>codePanel.forTarget(selected));
 on('actorCode',()=>codePanel.forTarget(selectedActor));
 on('testExport',async()=>{const result=await api('/api/motion-code',exportBody());timelineModel().mapping=structuredClone(mapping);$('exportDialog').close();await codePanel.addSource(result.source,'motion.py',timelineTarget);toast(result.metadata.loop?'Gait Python is running-ready; use Stop all to end its loop.':'Exported Python is ready to run in simulation.');});

@@ -137,6 +137,22 @@ def state():
         return sim.state()
 
 
+def validate_mapping(robot, mapping):
+    """Servo settings per joint, as edited in Servo setup. Unknown joints are dropped; missing ones keep defaults."""
+    if not isinstance(mapping, dict):
+        raise ValueError('Servo settings must be an object')
+    clean = robot.merge_mapping({})
+    for name in clean:
+        raw = mapping.get(name)
+        if not isinstance(raw, dict):
+            continue
+        servo, sign, offset = raw.get('servo', -1), raw.get('sign', 1), float(raw.get('offset', 0))
+        if not isinstance(servo, int) or not -1 <= servo <= 15 or sign not in (-1, 1) or not math.isfinite(offset) or abs(offset) > 90:
+            raise ValueError(f'Invalid servo settings for {name}')
+        clean[name] = {'servo': servo, 'sign': sign, 'offset': offset, 'verified': bool(raw.get('verified', False))}
+    return clean
+
+
 def selected_robot(target='main'):
     if target in (None, '', 'main'):
         return sim
@@ -406,6 +422,16 @@ def motion_samples(body: dict):
         robot.mapping = mapping
         checkpoint()
         return {'samples': samples, 'metadata': metadata}
+
+
+@app.post('/api/mapping')
+def save_mapping(body: dict):
+    """Persist Servo setup (servo numbers, directions, offsets, verified) without exporting anything."""
+    with sim.lock:
+        robot = selected_robot(body.get('target'))
+        robot.mapping = validate_mapping(robot, body.get('mapping'))
+        checkpoint()
+        return {'mapping': robot.mapping}
 
 
 @app.post('/api/motion-skill')

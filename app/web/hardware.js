@@ -66,7 +66,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   });
 
   document.querySelectorAll('[data-hardware-tab]').forEach(button => button.onclick = () => { document.querySelectorAll('[data-hardware-tab]').forEach(b => b.classList.toggle('selected', b === button)); document.querySelectorAll('.hardware-tab').forEach(panel => panel.classList.toggle('hidden', panel.id !== `hardware-${button.dataset.hardwareTab}-tab`)); });
-  $('openHardware').onclick = () => { const model = getModel(); $('hardwareHz').value = model.motion_hz; $('hardwareDirection').value = model.direction; $('hardwareDialog').showModal(); refreshMotions().catch(error => toast(error.message, true)); consolePanel.reload().catch(error => toast(error.message, true)); };
+  $('openHardware').onclick = () => { const model = getModel(); $('hardwareHz').value = model.motion_hz; $('hardwareDirection').value = model.direction; $('hardwareDialog').open ? $('hardwareDialog').close() : $('hardwareDialog').show(); refreshMotions().catch(error => toast(error.message, true)); consolePanel.reload().catch(error => toast(error.message, true)); };
   $('hardwareConnect').onclick = () => link.connect($('hardwareTransport').value)
     .then(() => { if (link.developerMode) window.dispatchEvent(new CustomEvent('bittle-developer-mode', {detail: {enabled: true}})); })
     .catch(error => { $('hardwareStatus').textContent = 'Connection failed'; toast(error.message, true); });
@@ -80,6 +80,6 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   const stopIfBusy = () => { if (link.status().busy) link.stop().catch(error => toast(error.message, true)); };
   $('hardwareDialog').addEventListener('close', stopIfBusy); document.addEventListener('visibilitychange', () => { if (document.hidden) stopIfBusy(); }); window.addEventListener('pagehide', () => link.cleanup());
 
-  const publicApi = {status: link.status, sendCommand: link.sendCommand, cancel: link.stop, voiceAct, disconnect: link.disconnect, link};
+  const publicApi = {status: link.status, sendCommand: link.sendCommand, cancel: link.stop, voiceAct, disconnect: link.disconnect, refreshMotions, link};
   window.bittleHardware = publicApi; render(); renderLibrary(); return publicApi;
 }

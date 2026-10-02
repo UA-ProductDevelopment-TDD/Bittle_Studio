@@ -75,3 +75,28 @@
 .voice-transcript .you { color: #d4e5ef; } .voice-transcript .bobby { color: var(--accent); } .voice-transcript .action { color: #f4c16d; }
 .voice-error { color: #ff8d86; min-height: 1.3em; }
 @media (max-width: 760px) { .library-columns { grid-template-columns: 1fr; } .library-head { align-items: stretch; flex-direction: column; } .library-head input { width: 100%; } }
+
+/* Bluetooth panel docked on the right (non-modal), so the 3D view stays visible while driving the robot. */
+#hardwareDialog[open]:not(:modal) { position: fixed; inset: 78px 0 0 auto; margin: 0; width: min(680px, 100vw); height: calc(100vh - 78px); max-height: none; border-radius: 0; border-width: 0 0 0 1px; z-index: 40; box-shadow: -12px 0 40px #0006; }
+#hardwareDialog[open]:not(:modal) .dialog-heading h2 { font-size: 18px; }
+@media (max-width: 850px) { #hardwareDialog[open]:not(:modal) { inset: 0; height: 100vh; } }
+
+/* Top bar: connection status and emergency stop. */
+.connection-pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; font-size: 12px; }
+.connection-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7d8a; }
+.connection-pill[data-state="live"] { border-color: #58724a; color: #d2edae; }
+.connection-pill[data-state="live"] .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.connection-pill[data-state="test"] { border-color: #7a6334; color: #f6d9a0; }
+.connection-pill[data-state="test"] .dot { background: #f4c16d; }
+.global-stop { border-color: #7a4447; background: #3d2224; font-weight: 600; }
+.global-stop:hover { background: #55292c; }
+
+/* Servo setup rows: Test column and a green tick for verified joints. */
+.mapping-header, .mapping-row { grid-template-columns: 2fr .7fr 1fr .7fr .7fr .6fr; }
+.mapping-row button { padding: 5px 8px; font-size: 12px; }
+.mapping-row.verified > span:first-child::after { content: ' ✓'; color: var(--accent); }
+
+/* Save as function dialog. */
+#saveFunctionDialog { width: min(480px, 95vw); }
+.save-function-fields { display: grid; gap: 12px; margin: 16px 0; }
+.save-function-fields label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }

@@ -64,6 +64,39 @@ class HeadUpgradeTest(unittest.TestCase):
         self.assertNotIn('gone', merged)
 
 
+class ServoSetupTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.context = TestClient(server.app)
+        cls.c = cls.context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.context.__exit__(None, None, None)
+
+    def test_mapping_saves_without_export_and_errors_name_joints(self):
+        c = self.c
+        mapping = c.get('/api/model').json()['mapping']
+        original = json.loads(json.dumps(mapping))
+        try:
+            mapping['left-front-shoulder-joint'].update(sign=-1, offset=4, verified=True)
+            saved = c.post('/api/mapping', json={'mapping': {**mapping, 'unknown-joint': {}}})
+            self.assertEqual(saved.status_code, 200, saved.text)
+            self.assertNotIn('unknown-joint', saved.json()['mapping'])
+            project = c.get('/api/project').json()['mapping']['left-front-shoulder-joint']
+            self.assertEqual((project['sign'], project['offset'], project['verified']), (-1, 4, True))
+            self.assertEqual(c.post('/api/mapping', json={'mapping': {**mapping, 'neck-joint': {'servo': 99, 'sign': 1}}}).status_code, 400)
+            # Hardware actions list exactly which joints still need Servo setup.
+            c.post('/api/frames', json={'frames': [{'time': 0, 'pose': {}}, {'time': 1, 'pose': {}}]})
+            error = c.post('/api/motion-skill', json={'motion_type': 'behavior'}).json()['detail']
+            self.assertIn('Servo setup', error)
+            self.assertIn('neck (not verified)', error)
+            self.assertNotIn('left front shoulder', error)
+        finally:
+            c.post('/api/mapping', json={'mapping': original})
+            c.post('/api/frames', json={'frames': []})
+
+
 class PackFolderTest(unittest.TestCase):
     def test_save_list_and_reject(self):
         with tempfile.TemporaryDirectory() as folder:

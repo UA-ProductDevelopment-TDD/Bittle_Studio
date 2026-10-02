@@ -32,12 +32,12 @@ Bittle-studio/
 ## From the simulator to the real robot in five steps
 
 1. In the Studio, make a motion on the **timeline** (pose the joints, add keyframes, press play).
-2. Open **Bluetooth → Functions** and **Save current timeline** as a Studio function.
+2. Press **★ Save as function** under the timeline and give it a name.
 3. On **Bluetooth → Console**, press **+ New button** to combine your functions with built-in tricks, then press **Save pack**. The pack is written to `saved-motions/`.
 4. Start **`launch-bittle-link.cmd`**, press **Import pack** and choose your pack.
 5. **Connect Bittle** and press your buttons.
 
-Before the first real run, open **Export motion** in the Studio and tick **Verified** for every servo. Try new motions in **Test mode** first; it sends nothing to the robot.
+Before the first real run, open **Servo setup** in the top bar: connect, press **Test** on each joint to check it moves the right way, and tick **Verified**. Try new motions in **Test mode** first; it sends nothing to the robot.
 
 ## Helpers
 
