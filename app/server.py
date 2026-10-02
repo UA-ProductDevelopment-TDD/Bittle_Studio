@@ -111,9 +111,13 @@ async def local_only(request: Request, call_next):
     if request.method not in ('GET', 'HEAD') and origin and origin != str(request.base_url).rstrip('/'):
         return JSONResponse({'detail': 'Only this local workbench may change the simulation'}, 403)
     try:
-        return await call_next(request)
+        response = await call_next(request)
     except (ValueError, KeyError, TypeError, SyntaxError, ET.ParseError, zipfile.BadZipFile, p.error) as error:
         return JSONResponse({'detail': str(error)}, 400)
+    # The page and its scripts must always be revalidated, or an update leaves the browser on stale code.
+    if request.url.path == '/' or request.url.path.startswith('/web/'):
+        response.headers['Cache-Control'] = 'no-cache'
+    return response
 
 
 @app.get('/')
