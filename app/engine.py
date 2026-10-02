@@ -1,4 +1,5 @@
 """Local, single-session Bullet simulation. SI units; Z is up."""
+import hashlib
 import math
 import threading
 import time
@@ -54,6 +55,24 @@ def asset_path(url):
     if not path.is_file():
         raise ValueError('Asset not found: ' + url)
     return path
+
+
+# SHA-256 of earlier bundled Bittle URDFs. Projects store the robot's URDF text, so an unmodified copy of an old
+# bundled file is swapped for the current bundled model when the project loads.
+OUTDATED_BITTLE_SHA256 = {
+    '0bb4261fe4826b994ca6a7d77a583c6024bb598a50377a8586ca7142305223e5',  # without head and neck
+    '20edb00f2ece0aa41b9e823342a9a4efd21ce901e77b5c93920085d4eca83cb3',  # first head version, turned 40 deg at neck 0
+}
+
+
+def upgrade_bundled_robot(xml, directory):
+    bundled = ASSETS / 'bittle'
+    if Path(directory).resolve() == bundled.resolve():
+        normalised = xml.replace('\r\n', '\n')
+        for candidate in (xml, normalised, normalised.replace('\n', '\r\n')):
+            if hashlib.sha256(candidate.encode('utf-8')).hexdigest() in OUTDATED_BITTLE_SHA256:
+                return (bundled / 'bittle.urdf').read_text(encoding='utf-8')
+    return xml
 
 
 def _content_root(directory):
@@ -267,8 +286,15 @@ class Simulation:
         self._sensor_velocities = {}
         self.pose(self.targets)
 
+    def merge_mapping(self, saved):
+        """Saved servo settings for joints that still exist; defaults for new joints (e.g. the neck)."""
+        saved = saved if isinstance(saved, dict) else {}
+        return {name: saved[name] if isinstance(saved.get(name), dict) else default for name, default in self.mapping.items()}
+
     @staticmethod
     def default_servo(name):
+        if 'neck' in name:
+            return 0  # OpenCat head pan
         for leg, index in [('left-front', 8), ('right-front', 9), ('right-back', 10), ('left-back', 11)]:
             if leg in name:
                 return index + (4 if 'knee' in name else 0)
@@ -483,14 +509,14 @@ class Simulation:
         actor_id = definition.get('id', uuid.uuid4().hex)
         if actor_id == 'main' or actor_id in self.actors:
             raise ValueError('Duplicate robot ID')
-        actor = Simulation(self.client, definition['xml'], directory, bool(definition.get('fixed', False)))
+        actor = Simulation(self.client, upgrade_bundled_robot(definition['xml'], directory), directory, bool(definition.get('fixed', False)))
         try:
             actor.actor_id = actor_id
             actor.actor_name = str(definition.get('name', 'Robot'))[:100]
             actor.home_position, actor.home_rotation = position, rotation
             p.resetBasePositionAndOrientation(actor.robot, position, p.getQuaternionFromEuler(rotation), physicsClientId=self.client)
             actor.pose(definition.get('targets', {}))
-            actor.mapping = definition.get('mapping', actor.mapping)
+            actor.mapping = actor.merge_mapping(definition.get('mapping'))
             actor.set_frames(definition.get('frames', []))
             actor.motion_hz = float(definition.get('motion_hz', self.motion_hz))
             actor.direction = definition.get('direction', 'forward')

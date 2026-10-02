@@ -24,7 +24,12 @@ class WorkbenchTest(unittest.TestCase):
     def test_complete_experiment(self):
         c = self.client
         model = c.get('/api/model').json()
-        self.assertEqual(len(model['joints']), 8)
+        self.assertEqual(len(model['joints']), 9)
+        neck = next(j for j in model['joints'] if j['name'] == 'neck-joint')
+        self.assertAlmostEqual(neck['lower'], -90, places=2)
+        self.assertAlmostEqual(neck['upper'], 90, places=2)
+        self.assertEqual(model['mapping']['neck-joint']['servo'], 0)
+        self.assertTrue(any(v.get('url', '').endswith('head/head__1.stl') for v in model['visuals']))
         self.assertGreater(len(model['visuals']), 8)
         self.assertTrue(any('not physically valid' in w for w in model['warnings']))
         initial = c.get('/api/project').json()

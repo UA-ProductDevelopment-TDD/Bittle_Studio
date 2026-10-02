@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, url_path, vector
+from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, upgrade_bundled_robot, url_path, vector
 from motion_export import build_motion, firmware_skill, python_motion
 from scripting import ScriptRunner, validate_scripts
 from packs import list_packs, pack_path, save_pack, validate_controls
@@ -340,10 +340,10 @@ def load_project(body: dict):
         candidate.home_rotation = vector(' '.join(map(str, body.get('robot_rotation', [0, 0, 0]))))
         directory = url_path(body['directory'])
         asset_url(directory / 'placeholder')
-        candidate.load_robot(body['xml'], directory)
+        candidate.load_robot(upgrade_bundled_robot(body['xml'], directory), directory)
         candidate.set_frames(body.get('frames', []))
         candidate.pose(body.get('targets', {}))
-        candidate.mapping = body.get('mapping', candidate.mapping)
+        candidate.mapping = candidate.merge_mapping(body.get('mapping'))
         for sensor in body.get('sensors', []):
             candidate.add_sensor(sensor)
         candidate.scripts = validate_scripts(body.get('scripts', []))

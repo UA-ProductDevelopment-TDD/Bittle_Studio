@@ -150,7 +150,7 @@ async function buildRobot() {
     if(v.color) color=new THREE.Color(...v.color.slice(0,3));
     materialize(mesh,color);mesh.position.fromArray(v.position);mesh.quaternion.fromArray(v.quaternion);group.add(mesh);
   }));
-  $('bodyCount').textContent=model.visuals.length;
+  $('bodyCount').textContent=model.visuals.length;$('jointCount').textContent=model.joints.length;
   renderActors();
 }
 async function buildObjects() {

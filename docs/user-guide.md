@@ -10,7 +10,7 @@ For another computer, install Python 3.11 and Node.js, then run `setup.cmd` once
 
 ## First experiment
 
-1. Use **Pose** to adjust the eight joints. Choose time `0` and **Add keyframe**.
+1. Use **Pose** to adjust the nine joints (four shoulders, four knees and the neck). Choose time `0` and **Add keyframe**.
 2. Change time to `2`, choose another pose, and add a second keyframe. **Play motion** previews the transition. Click a frame to select it; saving at the same time replaces it. Smooth and linear interpolation are available.
 3. Add a box, ramp, sphere, or steps. Select it in the scene or viewport, then edit its position, rotation, dimensions, mass and friction. Objects and the main Bittle can be moved with the viewport transform arrows while physics is paused. Select Bittle and choose **Move XYZ** or **Rotate XYZ**; its placement becomes the position used by Reset.
 4. **Run physics** enables gravity, collision response and joint motors. Play the timeline while physics runs to test motor-driven motion. **Pin robot base** is useful for bench tests. **Reset** resets body velocities and obstacle transforms, and returns to the first keyframe when present.
@@ -33,7 +33,7 @@ The workspace uses a compact Isaac Sim-inspired charcoal layout: a large viewpor
 
 **Export motion** produces a standalone Python script using the official `PetoiRobot` API and simultaneous `I` joint commands. Choose a motion type before generating it: **Pose** sends the currently displayed pose once, **Behavior** plays the timeline once, and **Gait** repeats the timeline until Ctrl+C. Studio's direct hardware player has its own stop button. The visible repeat checkbox follows this choice. Export samples the same timeline interpolation at the selected Motion Hz (50 Hz by default). Half-speed export is the default.
 
-Suggested servo indices are LF/RF/RB/LB shoulders 8/9/10/11 and knees 12/13/14/15. **Direction and offset are not calibrated.** Verify each joint against your real robot, set its direction and offset, and tick Verified. Export rejects unverified/duplicate indices and angles outside ±125°. This numerical bound is not a physical safety guarantee.
+Suggested servo indices are the neck (head pan) 0, LF/RF/RB/LB shoulders 8/9/10/11 and knees 12/13/14/15. A positive neck angle turns the head left, like OpenCat's `m 0 30`; if your head turns the other way, set the neck's direction to −1. **Direction and offset are not calibrated.** Verify each joint against your real robot, set its direction and offset, and tick Verified. Export rejects unverified/duplicate indices and angles outside ±125°. This numerical bound is not a physical safety guarantee.
 
 Install `PetoiRobot` in the Python environment used to run the downloaded file. Running `python bittle_motion.py` prints a dry run without connecting. `python bittle_motion.py --execute` connects, pauses before sending the initial pose, and asks for another check before playback. Ctrl+C stops a gait and closes the port; the robot retains its last target.
 
@@ -130,13 +130,13 @@ The command correction is grounded in [Petoi's command definitions](https://gith
 - Supplied link masses are retained. If a link omits inertial data, Studio uses the median declared mass and inertia as a runtime fallback and reports it in diagnostics. Bullet computes inertia from collision geometry. The supplied Bittle file has multiple nonphysical inertia tensors; diagnostics report these. The original file under `C:/Nvidea_Omniverse/Robots/Bittle_URDF_scaled` is untouched; the bundled copy only corrects mesh paths.
 - New additional robots are placed with their lowest collision shape 2 mm above the floor. **Place lowest collision on ground** applies the same correction after manual edits. Collision pairs that already penetrate in the authored zero pose are disabled and reported, preventing Bullet from launching overlapping CAD shells apart when physics starts.
 - Self-collision is enabled except between parent and child links. Ground friction is editable, as is each environment object's friction. No spring compliance, servo backlash, motor electronics, battery limits, automatic balance controller or sensor noise is modelled.
-- The supplied mesh set has 13 visual links and no head model; this application renders those supplied assets. It does not invent missing geometry.
+- The body and legs come from the community Bittle model. The head, jaw, neck mount and neck servo come from Petoi's official model and are fitted to it through the four shoulder hinges (within 4 mm). The neck turns ±90° about the real robot's tilted head axis. Projects saved before the head was added are upgraded automatically if their robot model was never edited.
 - The crouch example is a pose study, not a validated walking gait. Simulated motion does not guarantee balance or safe transfer to hardware. No real Bittle was connected or tested during development.
 - This is an initial workbench, not Blender feature parity: no inverse-kinematics foot handles, curve editor, texture authoring or native OpenCat firmware skill export yet. Multiple Python controllers, multiple URDFs and direct Petoi BLE/serial timeline testing are supported.
 - One local shared simulation per server. Multiple browser tabs operate on the same world. The server binds to loopback; do not expose it to a network as a multi-user service.
 
 ## Asset attribution
 
-The bundled robot was copied from the user's Bittle URDF directory. Its original README and GPL license are preserved as `robot-models/bittle/SOURCE.md` and `robot-models/bittle/LICENSE`. The upstream README attributes meshes to a third-party reverse-engineered GrabCAD design; inspect those terms before redistribution. Three.js and other dependencies retain their own licenses.
+The bundled robot was copied from the user's Bittle URDF directory. Its original README and GPL license are preserved as `robot-models/bittle/SOURCE.md` and `robot-models/bittle/LICENSE`. The upstream README attributes meshes to a third-party reverse-engineered GrabCAD design; inspect those terms before redistribution. The head and neck meshes are from Petoi's [ros_opencat](https://github.com/PetoiCamp/ros_opencat) Bittle model under the MIT license, kept as `robot-models/bittle/head/LICENSE`. Three.js and other dependencies retain their own licenses.
 
 The Petoi function catalog and connection protocol integration are adapted from the linked [UA Product Development Bittle AI Voice project](https://github.com/UA-ProductDevelopment-TDD/Bittle_AI_voice). Review that repository's license and the upstream Petoi firmware terms before redistribution.

@@ -339,7 +339,7 @@
     </joint>
 
     <!-- Head and neck: meshes and geometry from Petoi's official Bittle model (PetoiCamp/ros_opencat, MIT, see head/LICENSE),
-         aligned to this model through the four shoulder hinges and turned 39.65 deg so that 0 faces forward. neck-joint is OpenCat servo 0; positive turns the head left. -->
+         aligned to this model through the four shoulder hinges. neck-joint is OpenCat servo 0; positive turns the head left. -->
     <link name="neck-mount-link">
       <inertial>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -360,28 +360,28 @@
 
     <link name="head-link">
       <inertial>
-        <origin xyz="0.015356 -0.000001 0.012570" rpy="0 0 0"/>
+        <origin xyz="0.013959 -0.004476 0.013377" rpy="0 0 0"/>
         <mass value="0.024823"/>
         <inertia ixx="1.049e-05" iyy="1.325e-05" izz="1.031e-05" ixy="0" iyz="0" ixz="0"/>
       </inertial>
       <visual>
-        <origin xyz="-0.042930 -0.014812 -0.038611" rpy="0.326408 -0.099777 0.588807"/>
+        <origin xyz="-0.047554 -0.000000 -0.035941" rpy="0 0 0"/>
         <geometry><mesh filename="head/servo_neck__1.stl" scale="0.001 0.001 0.001"/></geometry>
       </visual>
       <visual>
-        <origin xyz="-0.042930 -0.014812 -0.038611" rpy="0.326408 -0.099777 0.588807"/>
+        <origin xyz="-0.047554 -0.000000 -0.035941" rpy="0 0 0"/>
         <geometry><mesh filename="head/jaw_1.stl" scale="0.001 0.001 0.001"/></geometry>
       </visual>
       <visual>
-        <origin xyz="-0.042930 -0.014812 -0.038611" rpy="0.326408 -0.099777 0.588807"/>
+        <origin xyz="-0.047554 -0.000000 -0.035941" rpy="0 0 0"/>
         <geometry><mesh filename="head/head__1.stl" scale="0.001 0.001 0.001"/></geometry>
       </visual>
       <collision>
-        <origin xyz="-0.042930 -0.014812 -0.038611" rpy="0.326408 -0.099777 0.588807"/>
+        <origin xyz="-0.047554 -0.000000 -0.035941" rpy="0 0 0"/>
         <geometry><mesh filename="head/head__1.stl" scale="0.001 0.001 0.001"/></geometry>
       </collision>
       <collision>
-        <origin xyz="-0.042930 -0.014812 -0.038611" rpy="0.326408 -0.099777 0.588807"/>
+        <origin xyz="-0.047554 -0.000000 -0.035941" rpy="0 0 0"/>
         <geometry><mesh filename="head/jaw_1.stl" scale="0.001 0.001 0.001"/></geometry>
       </collision>
     </link>

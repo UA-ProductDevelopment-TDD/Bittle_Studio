@@ -35,6 +35,35 @@ class LayoutTest(unittest.TestCase):
                 engine.url_path(bad)
 
 
+class HeadUpgradeTest(unittest.TestCase):
+    def test_old_headless_projects_get_the_head(self):
+        """Projects store URDF text; an unmodified copy of the pre-head model is swapped for the bundled one."""
+        bundled = engine.ASSETS / 'bittle'
+        current = (bundled / 'bittle.urdf').read_text(encoding='utf-8')
+        headless = (Path(__file__).parent / 'fixtures' / 'bittle-headless.urdf').read_bytes().decode('utf-8')
+        uncorrected = (Path(__file__).parent / 'fixtures' / 'bittle-head-uncorrected.urdf').read_bytes().decode('utf-8')
+        # Projects saved on Windows hold the text with either line ending.
+        for old in (headless, uncorrected):
+            for variant in (old, old.replace('\r\n', '\n')):
+                self.assertEqual(engine.upgrade_bundled_robot(variant, bundled), current)
+        self.assertNotIn('neck-joint', headless)
+        self.assertIn('neck-joint', current)
+        # An edited model, or one from another folder, is never replaced.
+        edited = headless.replace('left-front', 'lf')
+        self.assertEqual(engine.upgrade_bundled_robot(edited, bundled), edited)
+        self.assertEqual(engine.upgrade_bundled_robot(headless, engine.DATA), headless)
+        edited = current.replace('neck-joint', 'my-neck')
+        self.assertEqual(engine.upgrade_bundled_robot(edited, bundled), edited)
+        self.assertEqual(engine.upgrade_bundled_robot('<robot name="x"/>', engine.DATA), '<robot name="x"/>')
+
+    def test_mapping_merge_adds_neck(self):
+        sim = server.sim
+        merged = sim.merge_mapping({'left-front-shoulder-joint': {'servo': 8, 'sign': -1, 'offset': 3, 'verified': True}, 'gone': {}})
+        self.assertEqual(merged['left-front-shoulder-joint']['sign'], -1)
+        self.assertEqual(merged['neck-joint']['servo'], 0)
+        self.assertNotIn('gone', merged)
+
+
 class PackFolderTest(unittest.TestCase):
     def test_save_list_and_reject(self):
         with tempfile.TemporaryDirectory() as folder:
