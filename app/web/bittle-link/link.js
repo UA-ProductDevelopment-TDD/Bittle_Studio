@@ -106,7 +106,12 @@ export function createLink() {
 
   // Cancellation: every new action bumps the epoch; long-running loops abort when their token is stale.
   function wait(ms, token) { return new Promise((resolve, reject) => { const started = performance.now(); const tick = () => { if (!connected || token !== epoch) return reject(new Error(STOPPED)); if (performance.now() - started >= ms) return resolve(); setTimeout(tick, Math.min(20, ms)); }; tick(); }); }
-  async function press(command) { guard(); epoch++; busy = false; await sendCommand(command); setState(); }
+  async function press(command) {
+    guard(); epoch++; busy = false; await sendCommand(command);
+    // gb/gB are developer mode's own commands, so keep its state truthful when they are sent directly.
+    if (command === 'gb' || command === 'gB') { developerMode = command === 'gb'; log('INFO', developerMode ? 'Gyro off · developer mode on' : 'Gyro on · developer mode off'); }
+    setState();
+  }
   async function stop() { epoch++; const active = busy; busy = false; setState('Stopping…'); if (connected) await sendCommand('kbalance'); setState(connected ? 'Connected · motion stopped' : 'Not connected'); if (active) log('INFO', 'Motion stopped; balance pose requested'); }
   async function setDeveloperMode(enabled) { if (busy) await stop(); developerMode = !!enabled; if (connected) await sendCommand(enabled ? 'gb' : 'gB'); log('INFO', enabled ? 'Developer mode enabled' : 'Developer mode disabled'); setState(); }
 
