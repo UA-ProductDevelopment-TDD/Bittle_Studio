@@ -149,6 +149,7 @@ class Simulation:
         self.direction = 'forward'
         self.runtime_clock = 0.
         self.motion_elapsed = 0.
+        self.skill = None  # simulated console command (skills.py plan) currently playing
         self.actors = {}
         self.scripts = []
         self.motions = []
@@ -280,7 +281,8 @@ class Simulation:
         self.running = self.playing = False
         self.frames = []
         self.playhead = self.clock = 0.
-        self.mapping = {j['name']: {'servo': self.default_servo(j['name']), 'sign': 1, 'offset': 0, 'verified': False} for j in self.joints}
+        # Right-side legs turn opposite to OpenCat's servo angles in this model (checked against Petoi's own skills).
+        self.mapping = {j['name']: {'servo': self.default_servo(j['name']), 'sign': -1 if j['name'].startswith('right') else 1, 'offset': 0, 'verified': False} for j in self.joints}
         self.sensors = []
         self.sensor_values = {}
         self._sensor_velocities = {}
@@ -289,7 +291,17 @@ class Simulation:
     def merge_mapping(self, saved):
         """Saved servo settings for joints that still exist; defaults for new joints (e.g. the neck)."""
         saved = saved if isinstance(saved, dict) else {}
-        return {name: saved[name] if isinstance(saved.get(name), dict) else default for name, default in self.mapping.items()}
+        merged = {}
+        for name, default in self.mapping.items():
+            entry = saved.get(name)
+            if not isinstance(entry, dict):
+                merged[name] = default
+            elif (not entry.get('verified') and entry.get('sign') == 1 and not entry.get('offset')
+                  and entry.get('servo') == default['servo'] and default['sign'] == -1):
+                merged[name] = {**entry, 'sign': -1}  # untouched old default: adopt the corrected right-side direction
+            else:
+                merged[name] = entry
+        return merged
 
     @staticmethod
     def default_servo(name):
@@ -417,6 +429,32 @@ class Simulation:
                                    targetPosition=math.radians(self.targets[j['name']]), force=j['effort'],
                                    maxVelocity=j['velocity'], physicsClientId=self.client)
 
+    def play_skill(self, plan):
+        """Start a console command plan from skills.py; it replaces timeline playback and any previous skill."""
+        self.playing = False
+        self.skill = {**plan, 'index': 0, 'elapsed': 0., 'start': self.targets.copy()} if plan and plan['segments'] else None
+
+    def advance_skill(self, dt):
+        skill = self.skill
+        if not skill:
+            return
+        skill['elapsed'] += dt
+        while skill is self.skill:
+            seconds, target = skill['segments'][skill['index']]
+            t = min(1., skill['elapsed'] / seconds) if seconds > 0 else 1.
+            self.pose({name: start + (target[name] - start) * t for name in target
+                       for start in [skill['start'].get(name, self.targets.get(name, 0.))]})
+            if t < 1:
+                return
+            skill['elapsed'] -= seconds
+            skill['start'] = {**skill['start'], **target}
+            skill['index'] += 1
+            if skill['index'] >= len(skill['segments']):
+                if skill['loop_from'] is None:
+                    self.skill = None
+                    return
+                skill['index'] = skill['loop_from']
+
     def advance_motion(self, dt):
         if not (self.playing and self.frames):
             return
@@ -435,10 +473,12 @@ class Simulation:
         dt = 1 / self.physics_hz
         self.runtime_clock += dt
         self.advance_motion(dt)
+        self.advance_skill(dt)
         for actor in self.actors.values():
             actor.runtime_clock = self.runtime_clock
             actor.running = self.running
             actor.advance_motion(dt)
+            actor.advance_skill(dt)
         if self.running:
             self.drive_motors()
             for actor in self.actors.values():

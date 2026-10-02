@@ -18,7 +18,7 @@ For another computer, install Python 3.11 and Node.js, then run `setup.cmd` once
 
 Keyboard: **F** focuses the robot; **Space** plays/pauses motion outside text fields. Orbit with left-drag, pan with right-drag, zoom with the wheel.
 
-The workspace uses a compact Isaac Sim-inspired charcoal layout: a large viewport and timeline on the left, with Stage above Inspector on the right. Stage search filters robots and objects; expand **Create & import** or **World physics** for their controls. Panels scroll independently on desktop and stack below the viewport on screens up to 700 px wide. Close Stage, Inspector, Timeline or Python with the **×** in its heading. Open it again from **Window** in the top bar; the chosen layout is remembered in this browser. **Window → Reset workspace** restores the standard layout. **Edit robot** opens one Robot Editor for the selected robot's complete structure, sensors and URDF source.
+The workspace uses a compact Isaac Sim-inspired charcoal layout: Stage above Functions on the left, the viewport and timeline in the middle, and the Inspector at full height on the right. Stage search filters robots and objects; expand **Create & import** or **World physics** for their controls. Panels scroll independently on desktop and stack below the viewport on screens up to 700 px wide. Close Stage, Functions, Inspector, Timeline or Python with the **×** in its heading. Open it again from **Window** in the top bar; the chosen layout is remembered in this browser. **Window → Reset workspace** restores the standard layout. **Edit robot** opens one Robot Editor for the selected robot's complete structure, sensors and URDF source.
 
 ## Import and edit
 
@@ -51,14 +51,32 @@ Studio converts the timeline to an OpenCat firmware skill and uploads it with th
 
 Web Bluetooth and Web Serial require a compatible Chromium browser such as Chrome or Edge and a local secure context (`http://127.0.0.1` is allowed). The connection picker always requires a user click. Bittle Studio does not reconnect or move the robot on startup.
 
-### Developer mode, functions and voice
+### One place to control the robot: the Control tab
 
-The Bluetooth dialog now has four tabs that share one BLE/serial connection:
+The inspector's **Control** tab (right) holds everything that moves Bittle, and it works the same with or without a robot:
 
-- **Connection** contains direct timeline playback and **Developer mode**. Developer mode is selected by default. When the connection opens, Studio sends `gb` to turn off the firmware's balance/gyro assistance and blocks background voice actions. Explicit timeline playback, library buttons and terminal commands remain available. Turning developer mode off sends `gB` to restore balance assistance. Disconnecting leaves the checkbox ready for the next connection. The activity log distinguishes the first `K` upload from instant `T` replays.
-- **Console** is a controller in the style of the Petoi app. It has a gait selector with a direction pad (■ sends `kbalance`) plus posture, head and skill buttons. **My buttons** holds composed skills. Each one is a named, coloured sequence of Petoi commands and saved Studio functions, with a wait after every step, and can repeat until stopped. Build one with **+ New button**: add steps by hand, or tick **Record presses** and tap the pad and grids. Pressing any other console button or **Stop** interrupts a running sequence. Buttons are saved in autosave and project JSON.
-- **Functions** includes the Petoi posture, trick and gait catalog used by Bittle AI Voice. A gait keeps running in firmware until **Stop** sends `kbalance`. **My Studio functions** saves a copy of the current timeline with its pose/behavior/gait type, Hz, speed and order. Saved functions are included in autosave and project JSON; they can be loaded back into the editor, sent directly, or deleted.
+- **Without a robot**, every control moves the simulated Bittle only.
+- **With a robot connected** (Bluetooth panel), every control moves the simulation *and* sends the command to the robot.
+
+It contains, from top to bottom:
+
+- **Joint sliders** in the Petoi Skill Composer layout (head pan, body diagram, one box per leg). When connected they also drive the real servos through **Servo setup** (servo = direction × angle + offset). **Zero pose** and **Crouch** are mirrored the same way.
+- **Commands**: the gait selector and direction pad (■ = `kbalance`), postures, head, skills, robot settings (gyro and voice module), **My buttons** and **All Petoi skills**. Built-in skills play in the simulator from Petoi's own skill data (`app/petoi_skills.json`, converted from OpenCatEsp32 under the MIT license, see `app/petoi_skills.LICENSE`); right-turn gaits are mirrored from the left ones as the firmware does. Gaits keep looping until another command or **Stop**. Commands without a joint effect (gyro, voice module) only go to the robot.
+- **My buttons** are composed sequences of commands and saved functions with a wait after each step; they run on the simulator and, when connected, on the robot. **Record presses** adds steps from the pad, grids and buttons.
+- **Robot placement** (collapsed) for the start position used by Reset.
+
+Moving a slider, scrubbing or playing the timeline, or Reset takes over from a running simulated skill. The top-bar **Stop** and the **Esc** key stop both the simulation and the robot.
+
+The simulated skills follow your Servo setup. The defaults (right-side joints −1, as checked against Petoi's walking, sitting and standing data) make them look right out of the box; if a skill looks mirrored or inverted in the simulator, the same joint is set up wrong for the real robot too.
+
+The Bluetooth panel docks on the right and has two tabs that share one BLE/serial connection:
+
+- **Connection** contains direct timeline playback and **Developer mode**. Developer mode is selected by default. When the connection opens, Studio sends `gb` to turn off the firmware's balance/gyro assistance and blocks background voice actions. Explicit timeline playback, library buttons and terminal commands remain available. Turning developer mode off sends `gB` to restore balance assistance. Disconnecting leaves the checkbox ready for the next connection. The activity log distinguishes the first `K` upload from instant `T` replays. It also has the terminal for raw Petoi commands and the activity log.
 - **Voice** adds the optional Bobby Realtime voice companion from the merged workflow. Enter an OpenAI API key once per server run. The key is kept only in server memory and the browser audio connection uses WebRTC. Voice can talk without a robot, but physical actions require the shared hardware connection and are blocked whenever developer mode is active. Starting voice requires internet access and may incur OpenAI API usage charges.
+
+### Functions panel
+
+The **Functions** panel (left, under the Stage) holds your saved motions. **★ Save current timeline** (or **★ Save as function** under the timeline) saves a copy of the timeline with its pose/behavior/gait type, Hz, speed and order. **Load** puts it back on the timeline, **Run** plays it in the simulator and, when connected, on the robot, and **×** deletes it. Functions are included in autosave and project JSON, and can be steps of buttons in **My buttons**.
 
 Use **Test mode** to verify the developer-state commands, built-in skills, saved functions and voice tool routing before connecting a physical Bittle. The activity log should show `gb` when developer mode starts, `gB` when it ends, and `TEST` for every command that would have been sent.
 
@@ -67,11 +85,11 @@ Use **Test mode** to verify the developer-state commands, built-in skills, saved
 The connection, protocol and console are a separate module in `app/web/bittle-link/`. It imports nothing from the rest of Studio, and Studio's Bluetooth dialog is built on it. The same module also runs without the simulator:
 
 - Double-click **launch-bittle-link.cmd**, or run `python app/bittle_link.py`. This needs only Python's standard library (no PyBullet or `.venv` packages). It serves the console at **http://127.0.0.1:8770** and opens the browser. Use `--port` to pick another port and `--no-browser` to skip opening one.
-- From a running Studio, **Console → Open standalone ↗** opens the same page.
+- From a running Studio, **Control → Commands → Open standalone ↗** opens the same page.
 
 The standalone console has the connection bar, gait pad, posture and skill grids, **My buttons**, a terminal and the log. Its buttons are kept in that browser's storage; share them through the `saved-motions` folder with **Save pack** and **Import pack**.
 
-Buttons that use Studio functions travel as a **pack**. In Studio, **Console → Save pack** asks for a name and writes `saved-motions/<name>.json`. The pack contains the buttons plus every saved Studio function, compiled to the firmware skill that Studio itself would upload. Every servo in **Export motion** must be verified first. In Bittle Link, **Import pack** lists the files in `saved-motions` (or opens any other file) and merges the chosen one in, and you can then compose new buttons from those functions as well.
+Buttons that use Studio functions travel as a **pack**. In Studio, **Save pack** (Control tab, under Commands) asks for a name and writes `saved-motions/<name>.json`. The pack contains the buttons plus every saved Studio function, compiled to the firmware skill that Studio itself would upload. Every servo in **Export motion** must be verified first. In Bittle Link, **Import pack** lists the files in `saved-motions` (or opens any other file) and merges the chosen one in, and you can then compose new buttons from those functions as well.
 
 Developers: the module files and their API are described in the [developer guide](developer-guide.md).
 

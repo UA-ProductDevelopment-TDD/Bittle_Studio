@@ -48,7 +48,7 @@ function tab(name) {
 document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => tab(el.dataset.tab)));
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(el.dataset.close).close()));
 
-const panelDefaults={scene:true,inspector:true,timeline:true};
+const panelDefaults={scene:true,functions:true,inspector:true,timeline:true};
 function savedPanelLayout(){try{return JSON.parse(localStorage.getItem('bittle-workspace-panels')||'{}');}catch{return {};}}
 let panelVisibility={...panelDefaults,...savedPanelLayout()};
 function applyPanelLayout(){
@@ -58,6 +58,12 @@ function applyPanelLayout(){
     main.classList.toggle('hide-'+name,!panelVisibility[name]);
     const item=document.querySelector(`[data-window="${name}"]`);if(item)item.textContent=(panelVisibility[name]?'✓ ':'')+(name==='scene'?'Stage':name[0].toUpperCase()+name.slice(1));
   }
+  // Left column: Stage above Functions. Centre: viewport and timeline. Right: the inspector at full height.
+  const left=[panelVisibility.scene&&'scene',panelVisibility.functions&&'funcs'].filter(Boolean),columns=[],rows=['',''];
+  if(left.length){columns.push('clamp(210px,16vw,270px)');rows[0]+=left[0]+' ';rows[1]+=(left[1]||left[0])+' ';}
+  columns.push('minmax(0,1fr)');rows[0]+='work ';rows[1]+='work ';
+  if(panelVisibility.inspector){columns.push('clamp(300px,26vw,420px)');rows[0]+='insp';rows[1]+='insp';}
+  main.style.gridTemplateColumns=columns.join(' ');main.style.gridTemplateAreas=rows.map(r=>`"${r.trim()}"`).join(' ');
   try{localStorage.setItem('bittle-workspace-panels',JSON.stringify(panelVisibility));}catch{/* Restricted browser storage must not prevent startup. */}
   requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));
 }
@@ -209,9 +215,11 @@ function focusRobot(view='perspective') {const box=new THREE.Box3();robotLinks.f
 on('focus',()=>focusRobot());on('topView',()=>focusRobot('top'));on('sideView',()=>focusRobot('side'));on('grid',()=>{$('grid').setAttribute('aria-pressed',String(grid.visible=!grid.visible));});
 function render() {requestAnimationFrame(render);controls.update();if(selected&&selectionBox.visible)selectionBox.update();renderer.render(scene,camera);} render();
 
+// Mirror simulator joint changes to the connected robot through Servo setup (servo = direction × angle + offset).
+function mirrorPose(pose){if(timelineTarget!=='main'||!window.bittleHardware?.status().connected)return;const map=Object.keys(mapping).length?mapping:timelineModel().mapping;const entries=Object.entries(pose).flatMap(([name,value])=>{const m=map[name];return m&&Number.isInteger(m.servo)&&m.servo>=0&&m.servo<=15?[[m.servo,Math.round(m.sign*value+Number(m.offset||0))]]:[];});if(entries.length)window.bittleHardware.mirrorServos(entries);}
 function buildJoints() {
   const robot=timelineModel();if(!robot)return;
-  const setJoint=(j,value,slider,number)=>{const v=Number(value);if(!Number.isFinite(v))return;const clamped=Math.max(j.lower,Math.min(j.upper,v));number.value=clamped.toFixed(1);slider.value=clamped;pendingPose[j.name]=clamped;clearTimeout(poseTimer);poseTimer=setTimeout(flushPose,40);};
+  const setJoint=(j,value,slider,number)=>{const v=Number(value);if(!Number.isFinite(v))return;const clamped=Math.max(j.lower,Math.min(j.upper,v));number.value=clamped.toFixed(1);slider.value=clamped;pendingPose[j.name]=clamped;clearTimeout(poseTimer);poseTimer=setTimeout(flushPose,40);mirrorPose({[j.name]:clamped});};
   // A Bittle-shaped robot (every joint maps to a distinct OpenCat servo) gets the Skill Composer layout; any other URDF keeps the list.
   const servos=robot.joints.map(j=>bittleServo(j.name));
   if(servos.every(s=>s>=0)&&new Set(servos).size===servos.length){
@@ -232,7 +240,7 @@ function buildJoints() {
 async function flushPose(){if(!Object.keys(pendingPose).length)return;const pose=pendingPose;pendingPose={};try{await robotCommand('pose',{pose});}catch(e){toast(e.message,true);}}
 function updatePoseInputs(pose) {for(const j of timelineModel()?.joints||[]) {if(pendingPose[j.name]!==undefined)continue;const slider=$('joint-'+j.id),num=$('angle-'+j.id);if(slider&&num&&document.activeElement!==slider&&document.activeElement!==num){slider.value=pose[j.name];num.value=Number(pose[j.name]).toFixed(1);}}}
 function crouchPose(){return Object.fromEntries((timelineModel()?.joints||[]).map(j=>[j.name,/knee/.test(j.name)?45:-35]));}
-on('zeroPose',()=>robotCommand('pose',{pose:Object.fromEntries(timelineModel().joints.map(j=>[j.name,0]))}));on('crouchPose',()=>robotCommand('pose',{pose:crouchPose()}));
+on('zeroPose',()=>{const pose=Object.fromEntries(timelineModel().joints.map(j=>[j.name,0]));mirrorPose(pose);return robotCommand('pose',{pose});});on('crouchPose',()=>{const pose=crouchPose();mirrorPose(pose);return robotCommand('pose',{pose});});
 on('run',async()=>{await flushPose();await command('run',{value:!state.running});});on('reset',async()=>{await command('reset');$('frameTime').value=0;});
 on('applyPhysics',async()=>{await command('settings',{gravity:Number($('gravity').value),friction:Number($('friction').value),fixed:$('fixed').checked,physics_hz:Number($('physicsHz').value),motion_hz:Number($('motionHz').value),direction:$('motionDirection').value});await refresh();toast('Physics settings applied.');});
 on('applyUrdf',async()=>{await api('/api/urdf',{xml:$('urdf').value});await refresh();toast('URDF loaded. Timeline reset for the new model.');});on('downloadUrdf',()=>download('bittle.urdf',$('urdf').value,'application/xml'));
@@ -260,7 +268,7 @@ on('loop',()=>robotCommand('play',{value:timelineState()?.playing,loop:$('loop')
 let seekTimer;on('scrubber',()=>{const t=Number($('scrubber').value),target=timelineTarget;$('frameTime').value=t.toFixed(2);clearTimeout(seekTimer);seekTimer=setTimeout(()=>command('seek',{target,time:t}).catch(e=>toast(e.message,true)),25);},'input');
 on('frameTime',()=>robotCommand('seek',{time:Number($('frameTime').value)}),'change');
 on('saveProject',async()=>{await codePanel?.save();await flushPose();download('bittle-experiment.json',await api('/api/project'));toast('Project saved. Keep this installation’s data folder with imported assets.');});
-on('openProject',()=>$('projectFile').click());on('projectFile',async()=>{const f=$('projectFile').files[0];if(!f)return;await api('/api/project',JSON.parse(await f.text()));await refresh();codePanel?.reload();focusRobot();$('projectFile').value='';toast('Project restored.');},'change');
+on('openProject',()=>$('projectFile').click());on('projectFile',async()=>{const f=$('projectFile').files[0];if(!f)return;await api('/api/project',JSON.parse(await f.text()));await refresh();window.bittleHardware?.refreshMotions?.();codePanel?.reload();focusRobot();$('projectFile').value='';toast('Project restored.');},'change');
 on('help',()=>$('helpDialog').showModal());
 let mappingSaveTimer;
 function saveMapping(){clearTimeout(mappingSaveTimer);mappingSaveTimer=setTimeout(async()=>{try{const result=await api('/api/mapping',{target:timelineTarget,mapping});timelineModel().mapping=structuredClone(result.mapping);}catch(e){toast(e.message,true);}},250);}
@@ -304,6 +312,7 @@ on('connectionPill',()=>$('openHardware').click());
 on('globalStop',()=>window.bittleHardware?.cancel());
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&window.bittleHardware?.status().connected)window.bittleHardware.cancel().catch(error=>toast(error.message,true));});
 // Save the current timeline as a function without opening the Bluetooth panel.
+on('panelSaveFunction',()=>$('saveAsFunction').click());
 on('saveAsFunction',()=>{if(frameList.length<1)throw new Error('Add at least one keyframe first.');$('saveFunctionType').value=frameList.length<2?'pose':'behavior';$('saveFunctionDialog').showModal();$('saveFunctionName').focus();});
 on('saveFunctionForm',async e=>{e.preventDefault();const name=$('saveFunctionName').value.trim();if(!name)return;
   await api('/api/motions',{name,motion_type:$('saveFunctionType').value,hz:Number($('motionHz').value),speed:Number($('hardwareSpeed')?.value||.5),direction:$('motionDirection').value});

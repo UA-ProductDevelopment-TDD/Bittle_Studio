@@ -62,6 +62,11 @@ class HeadUpgradeTest(unittest.TestCase):
         self.assertEqual(merged['left-front-shoulder-joint']['sign'], -1)
         self.assertEqual(merged['neck-joint']['servo'], 0)
         self.assertNotIn('gone', merged)
+        # Untouched old defaults adopt the corrected right-side direction; verified or edited entries never change.
+        old = {'servo': 13, 'sign': 1, 'offset': 0, 'verified': False}
+        self.assertEqual(sim.merge_mapping({'right-front-knee-joint': old})['right-front-knee-joint']['sign'], -1)
+        self.assertEqual(sim.merge_mapping({'right-front-knee-joint': {**old, 'verified': True}})['right-front-knee-joint']['sign'], 1)
+        self.assertEqual(sim.merge_mapping({'right-front-knee-joint': {**old, 'offset': 3}})['right-front-knee-joint']['sign'], 1)
 
 
 class ServoSetupTest(unittest.TestCase):
@@ -95,6 +100,63 @@ class ServoSetupTest(unittest.TestCase):
         finally:
             c.post('/api/mapping', json={'mapping': original})
             c.post('/api/frames', json={'frames': []})
+
+
+class SimulatedSkillTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.context = TestClient(server.app)
+        cls.c = cls.context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.context.__exit__(None, None, None)
+
+    def settle(self, seconds):
+        s = server.sim
+        with s.lock:
+            for _ in range(int(s.physics_hz * seconds)):
+                s.tick()
+
+    def test_console_commands_play_in_the_simulator(self):
+        c, s = self.c, server.sim
+        c.post('/api/command', json={'action': 'reset'})
+        self.assertEqual(s.mapping['right-front-knee-joint']['sign'], -1)  # default direction found from Petoi's skills
+        # Posture: ksit lands on Petoi's angles through the inverse Servo setup.
+        self.assertTrue(c.post('/api/skill', json={'command': 'ksit'}).json()['simulated'])
+        self.settle(1)
+        self.assertIsNone(s.skill)
+        self.assertAlmostEqual(s.targets['left-back-shoulder-joint'], 70, delta=.5)    # sit: servo 11 = 105, clamped to the joint limit
+        self.assertAlmostEqual(s.targets['right-front-knee-joint'], -45, delta=.5)      # servo 13 = 45, right side mirrored
+        # Head and single joints: m and i commands.
+        c.post('/api/skill', json={'command': 'm 0 30'}); self.settle(.5)
+        self.assertAlmostEqual(s.targets['neck-joint'], 30, delta=.5)
+        # Gaits loop until another command; right turns are mirrored left turns.
+        result = c.post('/api/skill', json={'command': 'kwkR'}).json()
+        self.assertTrue(result['simulated'] and result['loop'])
+        # Commands without a joint effect are reported as not simulated.
+        self.assertFalse(c.post('/api/skill', json={'command': 'gB'}).json()['simulated'])
+        self.assertIsNotNone(s.skill)  # gB did not stop the gait
+        # Petoi's forward walk moves the simulated robot forward under physics.
+        c.post('/api/command', json={'action': 'reset'})
+        c.post('/api/skill', json={'command': 'kbalance'}); self.settle(.6)
+        with s.lock:
+            s.running = True
+            for j in s.joints:
+                j['velocity'] = 10.  # real servo speed for this check; the URDF's 90 deg/s is too slow for gaits
+        try:
+            start = server.p.getBasePositionAndOrientation(s.robot, physicsClientId=s.client)[0][1]
+            c.post('/api/skill', json={'command': 'kwkF'}); self.settle(3)
+            travelled = server.p.getBasePositionAndOrientation(s.robot, physicsClientId=s.client)[0][1] - start
+            self.assertGreater(travelled, .05)
+            # A direct joint command takes over from the running gait.
+            c.post('/api/command', json={'action': 'pose', 'pose': {'neck-joint': 10}})
+            self.assertIsNone(s.skill)
+        finally:
+            c.post('/api/command', json={'action': 'reset'})
+            with s.lock:
+                s.running = False
+                s.load_robot(s.xml, s.directory)
 
 
 class PackFolderTest(unittest.TestCase):

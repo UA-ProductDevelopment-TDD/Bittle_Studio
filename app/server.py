@@ -21,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, upgrade_bundled_robot, url_path, vector
 from motion_export import build_motion, firmware_skill, python_motion
 from scripting import ScriptRunner, validate_scripts
+import skills
 from packs import list_packs, pack_path, save_pack, validate_controls
 
 sim = None
@@ -171,6 +172,8 @@ def command(body: dict):
     with sim.lock:
         action = body['action']
         robot = selected_robot(body.get('target'))
+        if action in ('reset', 'pose', 'seek', 'play'):
+            robot.skill = None  # direct joint control or the timeline takes over from a simulated console skill
         if action == 'run':
             sim.running = bool(body['value'])
         elif action == 'reset':
@@ -422,6 +425,34 @@ def motion_samples(body: dict):
         robot.mapping = mapping
         checkpoint()
         return {'samples': samples, 'metadata': metadata}
+
+
+@app.post('/api/skill')
+def simulate_skill(body: dict):
+    """Play a console command (k<skill>, m/i joint commands) or a saved Studio function in the simulator."""
+    with sim.lock:
+        robot = selected_robot(body.get('target'))
+        if body.get('motion_id'):
+            item = next((m for m in sim.motions if m['id'] == body['motion_id']), None)
+            if item is None:
+                raise ValueError('Saved motion not found')
+            original = robot.frames
+            try:
+                robot.set_frames(item['frames'])
+                end, speed = (robot.frames[-1]['time'] if robot.frames else 0), float(item.get('speed', 1)) or 1
+                step = .02
+                count = max(1, int(end / speed / step) + 1)
+                poses = [robot.sample(min(end, i * step * speed)) for i in range(count)] if robot.frames else [item['pose']]
+            finally:
+                robot.frames = original
+            plan = skills.motion_plan(item['name'], poses, step, item['motion_type'] == 'gait')
+        else:
+            plan = skills.plan(body.get('command', ''), robot.mapping)
+        if plan is None:
+            return {'simulated': False}
+        robot.play_skill(plan)
+        return {'simulated': True, 'name': plan['name'], 'loop': plan['loop_from'] is not None,
+                'seconds': round(sum(s for s, _ in plan['segments']), 2)}
 
 
 @app.post('/api/mapping')

@@ -8,12 +8,7 @@
   .timeline {min-height:220px}
 }
 
-/* Flexible workspace panels and Blender-style top window menu. */
-@media (min-width:851px) {
-  main.hide-scene {grid-template-columns:minmax(420px,1fr) 304px}
-  main.hide-inspector {grid-template-columns:250px minmax(420px,1fr)}
-  main.hide-scene.hide-inspector {grid-template-columns:1fr}
-}
+/* Blender-style top window menu. Panel placement is computed in app.js (applyPanelLayout). */
 .panel-heading .caption {margin-left:auto;margin-right:8px}
 .panel-close {padding:2px 8px!important;border-color:transparent;background:transparent;font-size:18px;line-height:1}
 .window-menu {position:relative}

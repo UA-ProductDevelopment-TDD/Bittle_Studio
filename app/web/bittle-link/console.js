@@ -1,5 +1,6 @@
 import {catalog} from './catalog.js';
 import {renderJointLayout} from './joint-layout.js';
+import {packJointCommands} from './link.js';
 
 // Controller modelled on the Petoi app: gait pad, posture and skill grids, and user-composed buttons.
 // Host-provided pieces keep this UI independent of where buttons and skills are stored:
@@ -36,7 +37,8 @@ const MARKUP = `
 <div class="console-editor-actions"><button class="primary">Save button</button><button type="button" data-part="test">▶ Test</button><button type="button" data-part="cancel">Cancel</button><button type="button" data-part="delete" class="danger hidden">Delete</button></div></form>
 <p class="note">Last command: <code data-part="last">none</code>. The wait after each step is how long the console waits before sending the next one. Walking steps keep going during that wait, so end a walk with <code>kbalance</code>.</p><datalist data-part="codes"></datalist>`;
 
-export function initConsole(root, {link, toast = message => console.warn(message), store, library = null, tools = [], offlineHint = 'Not connected.'}) {
+//   joints: false hides the joint sliders (Studio has them in the inspector); statusText(detail) customises the status line.
+export function initConsole(root, {link, toast = message => console.warn(message), store, library = null, tools = [], offlineHint = 'Not connected.', joints = true, statusText = null}) {
   root.classList.add('bittle-console', 'offline'); root.innerHTML = MARKUP;
   const part = name => root.querySelector(`[data-part="${name}"]`);
   const listId = `petoiCodes${++datalistCount}`; part('codes').id = listId;
@@ -78,22 +80,12 @@ export function initConsole(root, {link, toast = message => console.warn(message
   // "index angle" pairs into one i-command as fit in a BLE text packet.
   const jointValues = new Map(SERVOS.map(([index]) => [index, 0])), pendingJoints = new Map();
   let jointTimer = null;
-  function jointCommands(entries) {
-    const commands = []; let current = 'i';
-    for (const [index, angle] of entries) {
-      const pair = ` ${index} ${angle}`;
-      if (current !== 'i' && (current + pair).length > BLE_TEXT) { commands.push(current); current = 'i'; }
-      current += pair;
-    }
-    if (current !== 'i') commands.push(current);
-    return commands;
-  }
   async function flushJoints() {
     jointTimer = null;
     if (!pendingJoints.size) return;
     const entries = [...pendingJoints]; pendingJoints.clear();
     if (!link.connected) return toast(offlineHint, true);
-    for (const command of jointCommands(entries)) await link.press(command).catch(fail);
+    for (const command of packJointCommands(entries, BLE_TEXT)) await link.press(command).catch(fail);
     part('last').textContent = `Joints · ${entries.map(([i, a]) => `${i}:${a}°`).join(' ')}`;
   }
   function queueJoint(index, angle) {
@@ -116,7 +108,7 @@ export function initConsole(root, {link, toast = message => console.warn(message
   part('jointsZero').onclick = () => { SERVOS.forEach(([index]) => queueJoint(index, 0)); renderJoints(); };
   part('jointsRelease').onclick = () => link.connected ? link.press('i').then(() => { part('last').textContent = 'Release head · i'; }).catch(fail) : toast(offlineHint, true);
   part('jointsRead').onclick = () => link.connected ? link.press('j').then(() => toast('Joint angles requested; the robot replies in the log.')).catch(fail) : toast(offlineHint, true);
-  renderJoints();
+  if (joints) renderJoints(); else part('jointPanel').remove();
 
   async function run(item) {
     if (!link.connected) return toast(offlineHint, true);
@@ -188,7 +180,7 @@ export function initConsole(root, {link, toast = message => console.warn(message
 
   function onState({detail}) {
     root.classList.toggle('offline', !detail.connected); part('stop').disabled = !detail.connected;
-    part('status').textContent = detail.connected ? `Connected · ${detail.transport}${detail.testMode ? ' (test mode, nothing is sent)' : ''}` : offlineHint;
+    part('status').textContent = statusText ? statusText(detail) : detail.connected ? `Connected · ${detail.transport}${detail.testMode ? ' (test mode, nothing is sent)' : ''}` : offlineHint;
   }
   link.addEventListener('state', onState); onState({detail: link.status()});
   renderStatic(); reload().catch(fail);

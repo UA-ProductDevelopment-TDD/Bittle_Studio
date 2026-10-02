@@ -9,6 +9,18 @@ const BLE_PACKET = 20;
 const STOPPED = 'Motion stopped.';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// Pack [servo, angle] pairs into as few "i servo angle ..." text commands as fit in one BLE packet each.
+export function packJointCommands(entries, limit = BLE_PACKET - 1) {
+  const commands = []; let current = 'i';
+  for (const [servo, angle] of entries) {
+    const pair = ` ${servo} ${Math.round(angle)}`;
+    if (current !== 'i' && (current + pair).length > limit) { commands.push(current); current = 'i'; }
+    current += pair;
+  }
+  if (current !== 'i') commands.push(current);
+  return commands;
+}
+
 export function createLink() {
   const events = new EventTarget();
   let connected = false, mode = '', device, characteristic, notifications;

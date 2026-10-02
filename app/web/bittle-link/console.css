@@ -116,3 +116,19 @@
   .step-row > input, .step-row > select:not(:first-of-type) { grid-column: 2 / -1; }
   .step-wait { grid-column: 2; }
 }
+
+/* The console adapts to its container: narrow hosts (Studio's inspector) stack the pad above the grids. */
+.bittle-console { container: console / inline-size; }
+@container console (max-width: 600px) {
+  .console-layout { grid-template-columns: 1fr; gap: 6px; }
+  .console-drive { max-width: 260px; width: 100%; margin: 0 auto; }
+  .console-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+  .console-custom-head { flex-wrap: wrap; }
+  .console-top button { padding-inline: 12px; }
+  .step-row { grid-template-columns: 18px 1fr auto; }
+  .step-row > input, .step-row > select:not(:first-of-type) { grid-column: 2 / -1; }
+  .step-wait { grid-column: 2; }
+}
+
+/* Left legs: minimum at the top (mirrors the right side). */
+.joint-control.vertical.inverted input[type=range] { direction: ltr; }

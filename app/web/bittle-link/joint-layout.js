@@ -4,6 +4,7 @@
 //   controls: [{servo, title, min, max, step, value, sliderId, numberId, onInput(value), onCommit(value)}]
 
 export const LEGS = [['Left front', 'lf', [12, 8]], ['Right front', 'rf', [9, 13]], ['Left back', 'lb', [15, 11]], ['Right back', 'rb', [10, 14]]];
+const LEFT_SERVOS = new Set([8, 12, 11, 15]);
 const DIAGRAM = {0: [60, 18], 8: [38, 52], 12: [18, 52], 9: [82, 52], 13: [102, 52], 11: [38, 128], 15: [18, 128], 10: [82, 128], 14: [102, 128]};
 
 // Default OpenCat servo index for a Bittle joint name; -1 if it is not one of Bittle's joints.
@@ -21,7 +22,8 @@ export function renderJointLayout(container, controls) {
   const highlight = (servo, on) => wrapper.querySelectorAll(`[data-servo="${servo}"]`).forEach(el => el.classList.toggle('active', on));
 
   function control(spec, vertical) {
-    const box = document.createElement('div'); box.className = `joint-control${vertical ? ' vertical' : ''}`; box.dataset.servo = spec.servo;
+    // Left legs' sliders run top-to-bottom so both sides of the body feel mirrored, as the legs themselves are.
+    const box = document.createElement('div'); box.className = `joint-control${vertical ? ' vertical' : ''}${vertical && LEFT_SERVOS.has(spec.servo) ? ' inverted' : ''}`; box.dataset.servo = spec.servo;
     const head = document.createElement('div'); head.className = 'joint-label';
     head.append(Object.assign(document.createElement('b'), {textContent: `(${spec.servo})`}), ` ${spec.title}`);
     const attrs = {min: spec.min, max: spec.max, step: spec.step ?? 1, value: spec.value};

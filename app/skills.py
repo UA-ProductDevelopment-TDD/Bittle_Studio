@@ -1,0 +1,102 @@
+"""Play Petoi console commands in the simulator.
+
+Turns OpenCat commands (k<skill>, m/i joint commands) into timed joint-space segments using Petoi's own skill
+data (petoi_skills.json) and the robot's Servo setup, inverted: joint angle = (servo angle - offset) / direction.
+A plan is {'name', 'segments': [(seconds, {joint: degrees})], 'loop_from': index or None}.
+"""
+import json
+import re
+from functools import lru_cache
+from pathlib import Path
+
+DATA = Path(__file__).resolve().parent / 'petoi_skills.json'
+GAIT_FRAME_S = .02          # one gait frame per 20 ms, matching the walking speed checked in physics
+POSTURE_S = .4              # transition into a posture
+JOINT_COMMAND_S = .25       # transition for m / i joint commands
+MIRROR = {8: 9, 9: 8, 10: 11, 11: 10, 12: 13, 13: 12, 14: 15, 15: 14}
+
+
+@lru_cache(maxsize=1)
+def table():
+    return json.loads(DATA.read_text(encoding='utf-8'))['skills']
+
+
+def skill_names():
+    return sorted(table())
+
+
+def _skill(name):
+    """Skill entry by name; right-turn gaits are mirrored from their left versions, as the firmware does."""
+    skills = table()
+    if name in skills:
+        return skills[name]
+    if name.endswith('R') and name[:-1] + 'L' in skills:
+        left = skills[name[:-1] + 'L']
+        servos = left['servos']
+        mirrored = [[row[servos.index(MIRROR.get(s, s))] if MIRROR.get(s, s) in servos else row[i] for i, s in enumerate(servos)] for row in left['frames']]
+        return {**left, 'frames': mirrored, 'roll': -left['roll']}
+    return None
+
+
+def _servo_map(mapping):
+    out = {}
+    for joint, m in mapping.items():
+        servo, sign = m.get('servo'), m.get('sign', 1)
+        if isinstance(servo, int) and 0 <= servo <= 15 and sign in (1, -1):
+            out[servo] = (joint, sign, float(m.get('offset', 0)))
+    return out
+
+
+def _pose(servo_angles, servo_map, ratio=1):
+    return {servo_map[s][0]: (a * ratio - servo_map[s][2]) / servo_map[s][1] for s, a in servo_angles.items() if s in servo_map}
+
+
+def _skill_plan(name, mapping):
+    entry = _skill(name)
+    if entry is None:
+        return None
+    smap, ratio, servos = _servo_map(mapping), entry['ratio'], entry['servos']
+    rows = [dict(zip(servos, row)) for row in entry['frames']]
+    if entry['type'] == 'posture':
+        return {'name': name, 'segments': [(POSTURE_S, _pose(rows[0], smap, ratio))], 'loop_from': None}
+    if entry['type'] == 'gait':
+        # Ease into the first frame, then loop all frames until another command arrives.
+        segments = [(POSTURE_S, _pose(rows[0], smap, ratio))] + [(GAIT_FRAME_S, _pose(row, smap, ratio)) for row in rows]
+        return {'name': name, 'segments': segments, 'loop_from': 1}
+    first, last, repeats = entry['loop']
+    order = list(range(first)) + list(range(first, last + 1)) * max(1, repeats) + list(range(last + 1, len(rows)))
+    segments, previous = [], None
+    for i in order:
+        row, (speed, delay) = rows[i], entry['timing'][i]
+        delta = max((abs(a - previous[s]) for s, a in row.items() if s in previous), default=60) * ratio if previous else 60
+        # Firmware speed is degrees per interpolation step; about 60 steps per second gives Petoi-like pacing.
+        seconds = min(2., max(.03, delta / (max(1, speed) * 60))) + max(0, delay) * .05
+        segments.append((seconds, _pose(row, smap, ratio)))
+        previous = row
+    return {'name': name, 'segments': segments, 'loop_from': None}
+
+
+def plan(command, mapping):
+    """Simulator plan for one console command, or None when it has no effect on the joints (gB, XAc, j...)."""
+    text = str(command).strip()
+    if text.startswith('k') and len(text) > 1:
+        return _skill_plan(text[1:].split()[0], mapping)
+    if text == 'd':
+        return _skill_plan('rest', mapping)
+    match = re.fullmatch(r'([mi])\s*(-?\d+(?:\s+-?\d+)*)', text)
+    if match:
+        values = [int(v) for v in match.group(2).split()]
+        if len(values) % 2:
+            return None
+        angles = dict(zip(values[::2], values[1::2]))
+        pose = _pose(angles, _servo_map(mapping))
+        return {'name': text, 'segments': [(JOINT_COMMAND_S, pose)], 'loop_from': None} if pose else None
+    return None
+
+
+def motion_plan(name, poses, step, loop):
+    """Plan for a saved Studio function, sampled as joint poses every `step` seconds."""
+    if not poses:
+        return None
+    segments = [(POSTURE_S, poses[0])] + [(step, pose) for pose in poses[1:]]
+    return {'name': name, 'segments': segments, 'loop_from': 1 if loop and len(segments) > 1 else None}
