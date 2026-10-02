@@ -18,7 +18,7 @@ For another computer, install Python 3.11 and Node.js, then run `setup.cmd` once
 
 Keyboard: **F** focuses the robot; **Space** plays/pauses motion outside text fields. Orbit with left-drag, pan with right-drag, zoom with the wheel.
 
-The workspace uses a compact Isaac Sim-inspired charcoal layout: Stage above Functions on the left, the viewport and timeline in the middle, and the Inspector at full height on the right. Stage search filters robots and objects; expand **Create & import** or **World physics** for their controls. Panels scroll independently on desktop and stack below the viewport on screens up to 700 px wide. Close Stage, Functions, Inspector, Timeline or Python with the **×** in its heading. Open it again from **Window** in the top bar; the chosen layout is remembered in this browser. **Window → Reset workspace** restores the standard layout. **Edit robot** opens one Robot Editor for the selected robot's complete structure, sensors and URDF source.
+The workspace uses a compact Isaac Sim-inspired charcoal layout: the Stage on the left, the viewport and the Motion timeline (with your saved Functions beside it) in the middle, and Robot control at full height on the right. Stage search filters robots and objects; expand **Create & import** or **World physics** for their controls. Panels scroll independently on desktop and stack below the viewport on screens up to 700 px wide. Close Stage, Inspector, Timeline or Python with the **×** in its heading. Open it again from **Window** in the top bar; the chosen layout is remembered in this browser. **Window → Reset workspace** restores the standard layout. **Edit robot** opens one Robot Editor for the selected robot's complete structure, sensors and URDF source.
 
 ## Import and edit
 
@@ -58,12 +58,13 @@ The inspector's **Control** tab (right) holds everything that moves Bittle, and 
 - **Without a robot**, every control moves the simulated Bittle only.
 - **With a robot connected** (Bluetooth panel), every control moves the simulation *and* sends the command to the robot.
 
-It contains, from top to bottom:
+The status line and **Stop** stay at the top; below them the controls are split into tabs that each fit on screen without scrolling (down to 1280×720): **Joints**, **Move** (gait pad), **Postures**, **Skills** (tricks and robot settings) and **Buttons** (My buttons). The last tab used is remembered. In detail:
 
-- **Joint sliders** in the Petoi Skill Composer layout (head pan, body diagram, one box per leg). When connected they also drive the real servos through **Servo setup** (servo = direction × angle + offset). **Zero pose** and **Crouch** are mirrored the same way.
-- **Commands**: the gait selector and direction pad (■ = `kbalance`), postures, head, skills, robot settings (gyro and voice module), **My buttons** and **All Petoi skills**. Built-in skills play in the simulator from Petoi's own skill data (`app/petoi_skills.json`, converted from OpenCatEsp32 under the MIT license, see `app/petoi_skills.LICENSE`); right-turn gaits are mirrored from the left ones as the firmware does. Gaits keep looping until another command or **Stop**. Commands without a joint effect (gyro, voice module) only go to the robot.
+- **Joint sliders** in the Petoi Skill Composer layout (head pan, body diagram, one box per leg). When connected they also drive the real servos through **Servo setup** (servo = direction × angle + offset). **Zero pose** is mirrored the same way.
+- **Commands**: the gait selector and direction pad (■ = `kbalance`), postures, head, skills, robot settings (gyro and voice module) and **My buttons**. Built-in skills play in the simulator from Petoi's own skill data (`app/petoi_skills.json`, converted from OpenCatEsp32 under the MIT license, see `app/petoi_skills.LICENSE`); right-turn gaits are mirrored from the left ones as the firmware does. Gaits keep looping until another command or **Stop**. Commands without a joint effect (gyro, voice module) only go to the robot.
 - **My buttons** are composed sequences of commands and saved functions with a wait after each step; they run on the simulator and, when connected, on the robot. **Record presses** adds steps from the pad, grids and buttons.
-- **Robot placement** (collapsed) for the start position used by Reset.
+
+The main Bittle's **placement** (start position used by Reset, in metres and degrees) is shown under the Stage when Bittle is selected, together with **Edit robot structure & sensors…**. Boxes, ramps and extra robots show their properties in the same place when selected.
 
 Moving a slider, scrubbing or playing the timeline, or Reset takes over from a running simulated skill. The top-bar **Stop** and the **Esc** key stop both the simulation and the robot.
 
@@ -74,9 +75,9 @@ The Bluetooth panel docks on the right and has two tabs that share one BLE/seria
 - **Connection** contains direct timeline playback and **Developer mode**. Developer mode is selected by default. When the connection opens, Studio sends `gb` to turn off the firmware's balance/gyro assistance and blocks background voice actions. Explicit timeline playback, library buttons and terminal commands remain available. Turning developer mode off sends `gB` to restore balance assistance. Disconnecting leaves the checkbox ready for the next connection. The activity log distinguishes the first `K` upload from instant `T` replays. It also has the terminal for raw Petoi commands and the activity log.
 - **Voice** adds the optional Bobby Realtime voice companion from the merged workflow. Enter an OpenAI API key once per server run. The key is kept only in server memory and the browser audio connection uses WebRTC. Voice can talk without a robot, but physical actions require the shared hardware connection and are blocked whenever developer mode is active. Starting voice requires internet access and may incur OpenAI API usage charges.
 
-### Functions panel
+### Functions
 
-The **Functions** panel (left, under the Stage) holds your saved motions. **★ Save current timeline** (or **★ Save as function** under the timeline) saves a copy of the timeline with its pose/behavior/gait type, Hz, speed and order. **Load** puts it back on the timeline, **Run** plays it in the simulator and, when connected, on the robot, and **×** deletes it. Functions are included in autosave and project JSON, and can be steps of buttons in **My buttons**.
+The **Functions** column on the right of the Motion timeline holds your saved motions. **★ Save as function** in the timeline saves a copy of the timeline with its pose/behavior/gait type, Hz, speed and order. **Load** puts it back on the timeline, **Run** plays it in the simulator and, when connected, on the robot, and **×** deletes it. Functions are included in autosave and project JSON, and can be steps of buttons in **My buttons**.
 
 Use **Test mode** to verify the developer-state commands, built-in skills, saved functions and voice tool routing before connecting a physical Bittle. The activity log should show `gb` when developer mode starts, `gB` when it ends, and `TEST` for every command that would have been sent.
 

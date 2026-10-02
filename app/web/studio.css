@@ -22,29 +22,9 @@ main,main.hide-scene,main.hide-inspector,main.hide-scene.hide-inspector{flex:1;m
 .editor-content,.editor-dialog .dialog-heading,.editor-nav,.editor-toolbar{background:var(--panel)}dialog{border-radius:4px;padding:18px}.editor-toolbar{flex-wrap:wrap}.editor-dialog{display:flex;flex-direction:column}.editor-dialog:not([open]){display:none}.editor-layout{flex:1;height:auto;min-height:0}.editor-section{height:auto;min-height:100%}.editor-dialog .dialog-heading{flex-shrink:0}.editor-content{overflow:auto}.editor-section-head{flex-wrap:wrap}#editorRobot{min-width:0;max-width:100%}.property-list>div{overflow-wrap:anywhere}.property-list small{min-width:0}
 #codePanel{max-height:55%;background:#252729}.coding #viewport{min-height:120px}
 @media(max-width:1000px){.project-title{display:none}main,main.hide-scene,main.hide-inspector{grid-template-columns:minmax(0,1fr) 290px}.telemetry{gap:9px}.timeline-header h2 span{display:block;margin-left:0}}
-@media(max-width:700px){body{height:auto;min-height:100dvh;overflow:auto}body>header{padding:7px 8px;gap:7px}body>header nav{width:100%}main,main.hide-scene,main.hide-inspector,main.hide-scene.hide-inspector{display:flex;flex-direction:column;overflow:visible;flex:1}.workspace{order:0;overflow:visible;flex:none}.scene-panel{order:1;max-height:480px}.functions-panel{order:2;max-height:420px}.inspector{order:3;max-height:650px}#viewport{flex:none;height:45dvh;min-height:230px}.timeline{max-height:none}.viewport-bar .caption{display:none}.viewport-hint{max-width:75%;font-size:9px}.telemetry{flex-wrap:wrap}.timeline-header .toolbar{width:100%}.timeline-header select{max-width:130px}.scene-list{display:block}.scene-item{width:100%}.scene-list #objectList{display:block}.scene-panel .sidebar-foot{display:flex}.workspace.coding{height:auto;min-height:0}#codePanel{max-height:none;height:450px}.editor-section{padding:12px}.editor-toolbar label{flex-wrap:wrap}.editor-nav{flex-wrap:wrap}.editor-toolbar{padding:8px}.editor-sensor-list{grid-template-columns:minmax(0,1fr)}.mapping-row,.mapping-header{font-size:10px;grid-template-columns:minmax(70px,1.3fr) repeat(3,minmax(35px,1fr)) 35px}}
+@media(max-width:700px){body{height:auto;min-height:100dvh;overflow:auto}body>header{padding:7px 8px;gap:7px}body>header nav{width:100%}main,main.hide-scene,main.hide-inspector,main.hide-scene.hide-inspector{display:flex;flex-direction:column;overflow:visible;flex:1}.workspace{order:0;overflow:visible;flex:none}.scene-panel{order:1;max-height:480px}.inspector{order:2;max-height:650px}#viewport{flex:none;height:45dvh;min-height:230px}.timeline{max-height:none}.viewport-bar .caption{display:none}.viewport-hint{max-width:75%;font-size:9px}.telemetry{flex-wrap:wrap}.timeline-header .toolbar{width:100%}.timeline-header select{max-width:130px}.scene-list{display:block}.scene-item{width:100%}.scene-list #objectList{display:block}.scene-panel .sidebar-foot{display:flex}.workspace.coding{height:auto;min-height:0}#codePanel{max-height:none;height:450px}.editor-section{padding:12px}.editor-toolbar label{flex-wrap:wrap}.editor-nav{flex-wrap:wrap}.editor-toolbar{padding:8px}.editor-sensor-list{grid-template-columns:minmax(0,1fr)}.mapping-row,.mapping-header{font-size:10px;grid-template-columns:minmax(70px,1.3fr) repeat(3,minmax(35px,1fr)) 35px}}
 @media(max-height:650px) and (min-width:701px){.timeline{max-height:42%;padding:6px 10px}.timeline-controls{margin:6px 0}#viewport{min-height:90px}}
 
-/* Functions panel (saved motions) under the Stage. */
-.functions-panel{grid-area:funcs;min-height:0;overflow:auto;border:1px solid var(--line);background:var(--panel)}
-.functions-body{display:grid;gap:8px;padding:8px}
-.functions-body input[type=search]{width:100%;font-size:11px}
-.functions-body .function-list{height:auto;min-height:60px;max-height:none}
-.functions-body .function-row{flex-wrap:wrap;min-height:0;padding:7px 8px;gap:6px}
-.functions-body .function-row>div:first-child{flex:1 1 120px;min-width:0}
-.functions-body .function-row b{font-size:12px;overflow-wrap:anywhere}
-.functions-body .function-row small{font-size:10px}
-.functions-body .row-actions button{padding:4px 7px;font-size:11px}
-.functions-body .note{margin:0;font-size:11px}
-/* All Petoi skills, under the robot console. */
-.all-skills{margin-top:16px;border-top:1px solid var(--line);padding-top:4px}
-.all-skills summary{cursor:pointer;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;list-style:none}
-.all-skills summary::-webkit-details-marker{display:none}
-.all-skills summary h4{margin:14px 0 8px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
-.all-skills summary h4::before{content:'▸ '}.all-skills[open] summary h4::before{content:'▾ '}
-.all-skills summary .note{margin:0}
-.all-skills input{width:100%;margin-bottom:8px}
-.all-skills .function-list{height:320px}
 
 /* Properties of the item selected in the Stage (objects, extra robots). */
 .stage-properties { border-top: 1px solid var(--line); }
@@ -54,3 +34,25 @@ main,main.hide-scene,main.hide-inspector,main.hide-scene.hide-inspector{flex:1;m
 .stage-properties .triple { flex-wrap: wrap; }
 .stage-properties .triple label { min-width: 60px; }
 .stage-properties textarea { width: 100%; height: 160px; font: 10px/1.5 Consolas, monospace; }
+
+/* Bittle placement in the narrow Stage column: three fields per row that use the full width. */
+.stage-properties .robot-transform-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.stage-properties .robot-transform-fields label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--muted); min-width: 0; }
+.stage-properties .robot-transform-fields input { width: 100%; min-width: 0; font: 10px Consolas, monospace; padding: 4px 2px; }
+.stage-properties #mainPlacement .button-grid button, .stage-properties #mainPlacement > button { font-size: 11px; padding: 6px; }
+
+/* Saved functions live in the timeline panel, beside the motion they come from. */
+.timeline{display:flex;gap:14px;align-items:stretch}
+.timeline-main{flex:1;min-width:0}
+.timeline-functions{width:clamp(200px,24%,300px);flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line);padding-left:12px}
+.timeline-functions-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.timeline-functions-head h3{margin:0;font-size:12px}
+.timeline-functions-head input{flex:1;min-width:0;font-size:11px;padding:4px 6px}
+.timeline-functions .function-list{flex:1;height:auto;min-height:60px;max-height:none;overflow:auto}
+.timeline-functions .function-row{flex-wrap:wrap;min-height:0;padding:5px 7px;gap:4px}
+.timeline-functions .function-row>div:first-child{flex:1 1 110px;min-width:0}
+.timeline-functions .function-row b{font-size:12px;overflow-wrap:anywhere}
+.timeline-functions .function-row small{font-size:10px}
+.timeline-functions .row-actions button{padding:3px 7px;font-size:11px}
+.timeline-functions .note{margin:4px;font-size:11px}
+@media(max-width:700px){.timeline{flex-direction:column}.timeline-functions{width:auto;border-left:0;border-top:1px solid var(--line);padding:10px 0 0;max-height:300px}}

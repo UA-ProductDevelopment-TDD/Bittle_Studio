@@ -111,4 +111,8 @@ details.control-section > summary h3 { margin: 0; }
 details.control-section > summary h3::before { content: '▸ '; color: var(--muted); }
 details.control-section[open] > summary h3::before { content: '▾ '; }
 details.control-section > summary span { font-size: 11px; color: var(--muted); }
-.commands .all-skills .function-list { height: 260px; }
+
+/* Joints tab header: just a slim Zero pose button. */
+#jointsSection .inspector-intro { display: none; }
+#jointsSection .presets { display: flex; justify-content: flex-end; margin: 0 0 6px; }
+#jointsSection .presets button { padding: 4px 12px; font-size: 12px; }

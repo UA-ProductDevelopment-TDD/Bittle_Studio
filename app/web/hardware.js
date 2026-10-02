@@ -37,9 +37,8 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
 
   function functionRow(title, detail, actions) { const row = document.createElement('div'); row.className = 'function-row'; const copy = document.createElement('div'); const b = document.createElement('b'), small = document.createElement('small'); b.textContent = title; small.textContent = detail; copy.append(b, small); row.append(copy, actions); return row; }
   function renderLibrary() {
-    const {connected, busy} = link.status(), q = $('functionSearch').value.trim().toLowerCase(), skillQuery = $('skillSearch').value.trim().toLowerCase(); $('builtinFunctions').replaceChildren();
-    for (const item of catalog.filter(item => !skillQuery || `${item.label} ${item.code}`.toLowerCase().includes(skillQuery))) { const button = document.createElement('button'); button.textContent = item.walking ? 'Start gait' : 'Run'; button.dataset.skillCode = item.code; button.onclick = () => control.press(item.code).catch(error => toast(error.message, true)); $('builtinFunctions').append(functionRow(item.label, `${item.code}${item.walking ? ' · gait' : ''}`, button)); }
-    $('customFunctions').replaceChildren(); if (!motions.length) { const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No functions yet. Make a motion on the timeline, then press ★ Save current timeline.'; $('customFunctions').append(p); }
+    const {connected, busy} = link.status(), q = $('functionSearch').value.trim().toLowerCase();
+    $('customFunctions').replaceChildren(); if (!motions.length) { const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No functions yet. Make a motion, then press ★ Save as function.'; $('customFunctions').append(p); }
     for (const item of motions.filter(item => !q || item.name.toLowerCase().includes(q))) { const actions = document.createElement('div'); actions.className = 'row-actions'; for (const [label, action] of [['Load', loadSaved], ['Run', playSaved], ['×', deleteSaved]]) { const button = document.createElement('button'); button.textContent = label; button.title = {Load: 'Put this function back on the timeline', Run: 'Play in the simulator, and on the robot when connected', '×': 'Delete this function'}[label]; if (label === 'Run') button.dataset.motionPlay = item.id; button.onclick = () => action(item).catch(error => toast(error.message, true)); actions.append(button); } $('customFunctions').append(functionRow(item.name, `${item.motion_type} · ${item.hz} Hz · ${item.frames.length} keyframes`, actions)); }
   }
   async function refreshMotions() { motions = (await api('/api/motions')).motions; renderLibrary(); consolePanel.refreshLibrary(); }
@@ -92,7 +91,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   }
 
   const consolePanel = initConsole($('hardwareConsole'), {
-    link: control, toast, joints: false,
+    link: control, toast, joints: false, tabs: true, extraTabs: [{label: 'Joints', element: $('jointsSection')}],
     statusText: detail => detail.robot ? `Simulator + robot · ${detail.testMode ? 'test mode, nothing is sent' : detail.transport === 'ble' ? 'Bluetooth BLE' : 'serial'}` : 'Simulator only · connect in Bluetooth to drive the robot too',
     store: {load: async () => (await api('/api/controls')).controls, save: async controls => (await api('/api/controls', {controls}, 'PUT')).controls},
     library: {list: () => motions, resolve: resolveMotion},
@@ -117,7 +116,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   $('hardwareStop').onclick = () => link.stop().catch(error => toast(error.message, true));
   $('hardwareTerminal').onsubmit = event => { event.preventDefault(); link.sendCommand($('hardwareCommand').value).catch(error => toast(error.message, true)); };
   $('developerMode').onchange = () => setDeveloperMode($('developerMode').checked).catch(error => { render(); toast(error.message, true); });
-  $('functionSearch').oninput = renderLibrary; $('skillSearch').oninput = renderLibrary;
+  $('functionSearch').oninput = renderLibrary;
   const stopIfBusy = () => { if (link.status().busy) link.stop().catch(error => toast(error.message, true)); };
   $('hardwareDialog').addEventListener('close', stopIfBusy); document.addEventListener('visibilitychange', () => { if (document.hidden) stopIfBusy(); }); window.addEventListener('pagehide', () => link.cleanup());
 

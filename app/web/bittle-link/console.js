@@ -24,21 +24,23 @@ let datalistCount = 0;
 
 const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
-<div class="console-layout"><div class="console-drive"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
-<div class="console-actions"><h4>Postures</h4><div data-part="postures" class="console-grid"></div><h4>Skills</h4><div data-part="skills" class="console-grid"></div><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div></div></div>
+<div class="console-layout"><div class="console-drive" data-section="move"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
+<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><h4>Skills</h4><div data-part="skills" class="console-grid"></div><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div></div></div></div>
 <details data-part="jointPanel" class="console-joints" open><summary><h4>Joints</h4><span class="note">Move each servo directly (servo degrees, sent as <code>i servo angle</code>).</span></summary>
 <div data-part="joints" class="joint-sliders"></div>
 <div class="joint-actions"><button type="button" data-part="jointsZero">All to 0°</button><button type="button" data-part="jointsRelease">Release head</button><button type="button" data-part="jointsRead">Read angles</button></div>
 <p class="note">Sliders show the last angle sent from here, not the robot's live position. Turn the gyro off (Robot settings) so balance correction does not fight the sliders. Start with small moves and keep the robot lifted.</p></details>
-<div class="console-custom-head"><div><h4>My buttons</h4><p data-part="hint" class="note"></p></div><div class="console-tools"><span data-part="tools"></span><label class="check"><input data-part="editMode" type="checkbox"> Edit buttons</label></div></div><div data-part="custom" class="console-grid custom-grid"></div>
+<div data-section="buttons"><div class="console-custom-head"><div><h4>My buttons</h4><p data-part="hint" class="note"></p></div><div class="console-tools"><span data-part="tools"></span><label class="check"><input data-part="editMode" type="checkbox"> Edit buttons</label></div></div><div data-part="custom" class="console-grid custom-grid"></div>
 <form data-part="editor" class="console-editor hidden"><div class="editor-head"><h4 data-part="editorTitle">New button</h4><span data-part="summary" class="note"></span></div>
 <div class="editor-fields"><label>Name<input data-part="name" maxlength="40" placeholder="For example: Greet and sit"></label><div class="editor-colors"><span>Colour</span><div data-part="colors"></div></div><label class="check"><input data-part="repeat" type="checkbox"> Repeat until stopped</label></div>
 <div data-part="steps" class="step-list"></div><div class="editor-step-actions"><button type="button" data-part="addStep">+ Command step</button><button type="button" data-part="addMotion">+ Studio function step</button><label class="check"><input data-part="record" type="checkbox"> Record presses from the pad and grids</label></div>
 <div class="console-editor-actions"><button class="primary">Save button</button><button type="button" data-part="test">▶ Test</button><button type="button" data-part="cancel">Cancel</button><button type="button" data-part="delete" class="danger hidden">Delete</button></div></form>
-<p class="note">Last command: <code data-part="last">none</code>. The wait after each step is how long the console waits before sending the next one. Walking steps keep going during that wait, so end a walk with <code>kbalance</code>.</p><datalist data-part="codes"></datalist>`;
+<p class="note">Last command: <code data-part="last">none</code>. The wait after each step is how long the console waits before sending the next one. Walking steps keep going during that wait, so end a walk with <code>kbalance</code>.</p></div><datalist data-part="codes"></datalist>`;
 
 //   joints: false hides the joint sliders (Studio has them in the inspector); statusText(detail) customises the status line.
-export function initConsole(root, {link, toast = message => console.warn(message), store, library = null, tools = [], offlineHint = 'Not connected.', joints = true, statusText = null}) {
+//   tabs: true shows Move / Postures / Skills / Buttons as tabs under the status line (for narrow hosts);
+//   extraTabs: [{label, element}] are added in front of them (Studio's Joints panel).
+export function initConsole(root, {link, toast = message => console.warn(message), store, library = null, tools = [], offlineHint = 'Not connected.', joints = true, statusText = null, tabs = false, extraTabs = []}) {
   root.classList.add('bittle-console', 'offline'); root.innerHTML = MARKUP;
   const part = name => root.querySelector(`[data-part="${name}"]`);
   const listId = `petoiCodes${++datalistCount}`; part('codes').id = listId;
@@ -183,6 +185,35 @@ export function initConsole(root, {link, toast = message => console.warn(message
     part('status').textContent = statusText ? statusText(detail) : detail.connected ? `Connected · ${detail.transport}${detail.testMode ? ' (test mode, nothing is sent)' : ''}` : offlineHint;
   }
   link.addEventListener('state', onState); onState({detail: link.status()});
+
+  // Tab mode: move each section into its own pane, inside this console so every part keeps working.
+  function buildTabs() {
+    const bar = document.createElement('div'); bar.className = 'console-tabs'; bar.setAttribute('role', 'tablist');
+    const panes = document.createElement('div'); panes.className = 'console-panes';
+    const entries = [...extraTabs.map(tab => ({label: tab.label, nodes: [tab.element]})),
+      {label: 'Move', nodes: [root.querySelector('[data-section="move"]')]},
+      {label: 'Postures', nodes: [root.querySelector('[data-section="postures"]')]},
+      {label: 'Skills', nodes: [root.querySelector('[data-section="skills"]')]},
+      {label: 'Buttons', nodes: [root.querySelector('[data-section="buttons"]')]}];
+    const select = index => {
+      [...bar.children].forEach((b, i) => b.setAttribute('aria-selected', String(i === index)));
+      [...panes.children].forEach((pane, i) => pane.classList.toggle('hidden', i !== index));
+      try { localStorage.setItem('bittle-console-tab', String(index)); } catch {}
+    };
+    entries.forEach((entry, index) => {
+      const button = Object.assign(document.createElement('button'), {type: 'button', textContent: entry.label});
+      button.setAttribute('role', 'tab'); button.onclick = () => select(index);
+      const pane = document.createElement('div'); pane.className = 'console-pane'; pane.setAttribute('role', 'tabpanel');
+      pane.append(...entry.nodes.filter(Boolean));
+      bar.append(button); panes.append(pane);
+    });
+    root.querySelector('.console-layout').remove();
+    root.querySelector('.console-top').after(bar, panes);
+    root.classList.add('tabbed');
+    let saved = 0; try { saved = Number(localStorage.getItem('bittle-console-tab')) || 0; } catch {}
+    select(saved < entries.length ? saved : 0);
+  }
+  if (tabs) buildTabs();
   renderStatic(); reload().catch(fail);
   return {reload, refreshLibrary: renderEditor, get controls() { return controls; }};
 }
