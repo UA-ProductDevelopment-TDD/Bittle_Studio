@@ -14,6 +14,9 @@ GAIT_FRAME_S = .02          # one gait frame per 20 ms, matching the walking spe
 POSTURE_S = .4              # transition into a posture
 JOINT_COMMAND_S = .25       # transition for m / i joint commands
 MIRROR = {8: 9, 9: 8, 10: 11, 11: 10, 12: 13, 13: 12, 14: 15, 15: 14}
+STEP_S = .008               # firmware transform(): one interpolation step per ~8 ms (delay((DOF - offset) / 2))
+SERVO_DEG_PER_S = 350       # realistic loaded speed of Bittle's servos (about 0.17 s per 60 degrees)
+FIRST_FRAME_DEG = 45       # assumed travel into a behaviour's first frame (the current pose is not known here)
 
 
 @lru_cache(maxsize=1)
@@ -58,7 +61,7 @@ def _skill_plan(name, mapping):
     smap, ratio, servos = _servo_map(mapping), entry['ratio'], entry['servos']
     rows = [dict(zip(servos, row)) for row in entry['frames']]
     if entry['type'] == 'posture':
-        return {'name': name, 'segments': [(POSTURE_S, _pose(rows[0], smap, ratio))], 'loop_from': None}
+        return {'name': name, 'segments': [(POSTURE_S, _pose(rows[0], smap, ratio))], 'loop_from': None, 'ease': True}
     if entry['type'] == 'gait':
         # Ease into the first frame, then loop all frames until another command arrives.
         segments = [(POSTURE_S, _pose(rows[0], smap, ratio))] + [(GAIT_FRAME_S, _pose(row, smap, ratio)) for row in rows]
@@ -68,12 +71,19 @@ def _skill_plan(name, mapping):
     segments, previous = [], None
     for i in order:
         row, (speed, delay) = rows[i], entry['timing'][i]
-        delta = max((abs(a - previous[s]) for s, a in row.items() if s in previous), default=60) * ratio if previous else 60
-        # Firmware speed is degrees per interpolation step; about 60 steps per second gives Petoi-like pacing.
-        seconds = min(2., max(.03, delta / (max(1, speed) * 60))) + max(0, delay) * .05
-        segments.append((seconds, _pose(row, smap, ratio)))
+        delta = max((abs(a - previous[s]) for s, a in row.items() if s in previous), default=0) * ratio if previous else FIRST_FRAME_DEG
+        segments.append((behavior_seconds(delta, speed), _pose(row, smap, ratio)))
+        if delay:  # the firmware then holds the frame for |delay| x 50 ms
+            segments.append((abs(delay) * .05, segments[-1][1]))
         previous = row
-    return {'name': name, 'segments': segments, 'loop_from': None}
+    return {'name': name, 'segments': segments, 'loop_from': None, 'ease': True}
+
+
+def behavior_seconds(max_degrees, speed):
+    """OpenCat transform(): round(maxDiff / (speed / 8)) steps of about 8 ms each (motion.h, ESP32 firmware)."""
+    steps = round(max_degrees / (max(1, abs(speed)) / 8))
+    # Fast frames are limited by the servos themselves, not the firmware's step count.
+    return max(.02, steps * STEP_S, max_degrees / SERVO_DEG_PER_S)
 
 
 def plan(command, mapping):

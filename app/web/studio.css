@@ -45,3 +45,12 @@ main,main.hide-scene,main.hide-inspector,main.hide-scene.hide-inspector{flex:1;m
 .all-skills summary .note{margin:0}
 .all-skills input{width:100%;margin-bottom:8px}
 .all-skills .function-list{height:320px}
+
+/* Properties of the item selected in the Stage (objects, extra robots). */
+.stage-properties { border-top: 1px solid var(--line); }
+.stage-properties .tab-panel { padding: 10px 9px; }
+.stage-properties .tab-panel.hidden { display: none; }
+.stage-properties h3 { font-size: 12px; margin-top: 12px; }
+.stage-properties .triple { flex-wrap: wrap; }
+.stage-properties .triple label { min-width: 60px; }
+.stage-properties textarea { width: 100%; height: 160px; font: 10px/1.5 Consolas, monospace; }

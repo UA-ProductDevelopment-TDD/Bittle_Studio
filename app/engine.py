@@ -62,6 +62,7 @@ def asset_path(url):
 OUTDATED_BITTLE_SHA256 = {
     '0bb4261fe4826b994ca6a7d77a583c6024bb598a50377a8586ca7142305223e5',  # without head and neck
     '20edb00f2ece0aa41b9e823342a9a4efd21ce901e77b5c93920085d4eca83cb3',  # first head version, turned 40 deg at neck 0
+    'fd3e16753188383288258af946a9ede563edb3c4aef37883ffccc298c289ec3a',  # narrow, unmirrored leg limits (clipped sit)
 }
 
 
@@ -442,7 +443,9 @@ class Simulation:
         while skill is self.skill:
             seconds, target = skill['segments'][skill['index']]
             t = min(1., skill['elapsed'] / seconds) if seconds > 0 else 1.
-            self.pose({name: start + (target[name] - start) * t for name in target
+            # Postures and behaviours ease in and out like the firmware's cosine interpolation; gaits run linearly.
+            k = (1 - math.cos(math.pi * t)) / 2 if skill.get('ease') else t
+            self.pose({name: start + (target[name] - start) * k for name in target
                        for start in [skill['start'].get(name, self.targets.get(name, 0.))]})
             if t < 1:
                 return

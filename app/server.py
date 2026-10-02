@@ -91,6 +91,9 @@ async def lifespan(app):
             load_project(json.loads((DATA / 'studio-session.json').read_text(encoding='utf-8')))
         except Exception as error:
             print('Could not restore the last session:', error)
+    # Every Studio start shows the robots in the zero pose; the restored timeline and settings are kept.
+    for robot in (sim, *sim.actors.values()):
+        robot.pose({joint['name']: 0. for joint in robot.joints})
     thread = threading.Thread(target=sim.worker, daemon=True)
     thread.start()
     yield

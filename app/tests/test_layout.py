@@ -42,8 +42,9 @@ class HeadUpgradeTest(unittest.TestCase):
         current = (bundled / 'bittle.urdf').read_text(encoding='utf-8')
         headless = (Path(__file__).parent / 'fixtures' / 'bittle-headless.urdf').read_bytes().decode('utf-8')
         uncorrected = (Path(__file__).parent / 'fixtures' / 'bittle-head-uncorrected.urdf').read_bytes().decode('utf-8')
+        narrow = (Path(__file__).parent / 'fixtures' / 'bittle-narrow-limits.urdf').read_bytes().decode('utf-8')
         # Projects saved on Windows hold the text with either line ending.
-        for old in (headless, uncorrected):
+        for old in (headless, uncorrected, narrow):
             for variant in (old, old.replace('\r\n', '\n')):
                 self.assertEqual(engine.upgrade_bundled_robot(variant, bundled), current)
         self.assertNotIn('neck-joint', headless)
@@ -126,7 +127,8 @@ class SimulatedSkillTest(unittest.TestCase):
         self.assertTrue(c.post('/api/skill', json={'command': 'ksit'}).json()['simulated'])
         self.settle(1)
         self.assertIsNone(s.skill)
-        self.assertAlmostEqual(s.targets['left-back-shoulder-joint'], 70, delta=.5)    # sit: servo 11 = 105, clamped to the joint limit
+        self.assertAlmostEqual(s.targets['left-back-shoulder-joint'], 105, delta=.5)   # sit: servo 11 = 105
+        self.assertAlmostEqual(s.targets['right-back-shoulder-joint'], -105, delta=.5) # servo 10 = 105, mirrored: both sides equal
         self.assertAlmostEqual(s.targets['right-front-knee-joint'], -45, delta=.5)      # servo 13 = 45, right side mirrored
         # Head and single joints: m and i commands.
         c.post('/api/skill', json={'command': 'm 0 30'}); self.settle(.5)
