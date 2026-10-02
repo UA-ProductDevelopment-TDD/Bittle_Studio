@@ -1,6 +1,8 @@
 // Bittle Link: transport and OpenCat protocol for a Petoi Bittle, with no DOM or Studio dependencies.
 // Transports: 'ble' (Nordic UART over Web Bluetooth), 'serial' (Web Serial, 115200 baud) and 'test' (logs only).
-// Events: 'log' {kind, message}, 'state' {connected, transport, testMode, busy, developerMode, message}.
+// Events: 'log' {kind, message}, 'state' {connected, transport, testMode, busy, developerMode, message}, 'rx' {text} (raw replies),
+// 'joints' {angles: [16 servo angles]} whenever the robot reports its joint list (the j command).
+// Console macros handled by press(): 'fp' read real positions once, 'fP' keep reading, '#on' switch the servos back on.
 
 const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
@@ -26,6 +28,7 @@ export function createLink() {
   let connected = false, mode = '', device, characteristic, notifications;
   let port, writer, reader, readTask, closing = false, busy = false, epoch = 0, message = '';
   let writeQueue = Promise.resolve(), uploadedSignature = '', developerMode = true;
+  let rxLine = '', lastJoints = null;  // last joint list reported by the robot (servo degrees, index = servo number)
 
   const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, {detail}));
   const log = (kind, text) => emit('log', {kind, message: text});
@@ -33,11 +36,22 @@ export function createLink() {
   const setState = (text = '') => { message = text; emit('state', status()); };
   const guard = () => { if (!connected) throw new Error('Connect Bittle first.'); };
 
-  function received(event) { const value = new TextDecoder().decode(event.target.value); if (value) log('RX', value.replace(/[\r\n]+/g, ' ').trim()); }
+  function receivedText(text) {
+    if (!text) return;
+    emit('rx', {text}); log('RX', text.replace(/[\r\n]+/g, ' ').trim());
+    // The j report ends with a line of 16 angles separated by ',<tab>' (tools.h list2String).
+    rxLine = (rxLine + text).slice(-2000);
+    const lines = rxLine.split(/\r?\n/); rxLine = lines.pop();
+    for (const line of lines) {
+      const values = line.split(',').map(v => v.trim()).filter(Boolean);
+      if (values.length === 16 && values.every(v => /^-?\d+$/.test(v))) { lastJoints = values.map(Number); emit('joints', {angles: lastJoints}); }
+    }
+  }
+  function received(event) { receivedText(new TextDecoder().decode(event.target.value)); }
   function lost() { epoch++; connected = busy = false; log('INFO', 'Bluetooth connection lost'); setState('Connection lost'); }
   async function readSerial() {
     const decoder = new TextDecoder();
-    try { while (reader) { const {value, done} = await reader.read(); if (done) break; const text = decoder.decode(value, {stream: true}); if (text) log('RX', text.replace(/[\r\n]+/g, ' ').trim()); } }
+    try { while (reader) { const {value, done} = await reader.read(); if (done) break; receivedText(decoder.decode(value, {stream: true})); } }
     catch (error) { if (!closing) log('ERROR', error.message); }
   }
   async function cleanup() {
@@ -70,7 +84,7 @@ export function createLink() {
   function writeBytes(bytes, description) {
     const task = writeQueue.then(async () => {
       guard();
-      if (mode === 'test') { log('TEST', description); return; }
+      if (mode === 'test') { log('TEST', description); testReply(bytes); return; }
       if (characteristic) {
         for (let offset = 0; offset < bytes.length; offset += BLE_PACKET) {
           const chunk = bytes.slice(offset, offset + BLE_PACKET);
@@ -81,6 +95,14 @@ export function createLink() {
       log('TX', description);
     });
     writeQueue = task.catch(() => {}); return task;
+  }
+  // Test mode answers j like the firmware (=, servo numbers, 16 angles), using the angles it was sent with i/m.
+  const testAngles = new Array(16).fill(0);
+  function testReply(bytes) {
+    const text = new TextDecoder().decode(bytes).trim();
+    const joints = text.match(/^[im]\s*(-?\d+(?:\s+-?\d+)*)$/);
+    if (joints) { const v = joints[1].split(/\s+/).map(Number); for (let i = 0; i + 1 < v.length; i += 2) if (v[i] >= 0 && v[i] < 16) testAngles[v[i]] = v[i + 1]; }
+    if (text === 'j') setTimeout(() => receivedText(`=\r\n${[...Array(16).keys()].join('\t')}\t\r\n${testAngles.join(',\t')},\t\r\n`), 30);
   }
   function sendCommand(command) {
     const value = String(command).trim();
@@ -118,8 +140,30 @@ export function createLink() {
 
   // Cancellation: every new action bumps the epoch; long-running loops abort when their token is stale.
   function wait(ms, token) { return new Promise((resolve, reject) => { const started = performance.now(); const tick = () => { if (!connected || token !== epoch) return reject(new Error(STOPPED)); if (performance.now() - started >= ms) return resolve(); setTimeout(tick, Math.min(20, ms)); }; tick(); }); }
+  // Servo feedback is printed to USB only, but it also updates the joint list that j reports on every port.
+  // Plain f (not fp) marks a measurement as running, so the firmware re-attaches the servos (which reading detaches)
+  // on the next command: here the j that reports the result (OpenCatEsp32 reaction.h / espServo.h).
+  async function readPositions(token) { await sendCommand('f'); await wait(350, token); await sendCommand('j'); }
+  async function livePositions(token) {
+    try { while (token === epoch && connected) { await readPositions(token); await wait(250, token); } }
+    catch (error) { if (error.message !== STOPPED) log('ERROR', error.message); }
+  }
+  async function motorsOn() {
+    // The firmware has no 'servos on' command: ':' restores full servo stiffness (reading leaves them soft), and
+    // commanding the last read positions powers them on where the legs are.
+    await sendCommand(':');
+    if (!lastJoints) { log('INFO', 'No positions read yet: motors on via kbalance'); return sendCommand('kbalance'); }
+    const pairs = [0, 8, 9, 10, 11, 12, 13, 14, 15].map(servo => [servo, lastJoints[servo]]);
+    for (const command of packJointCommands(pairs)) await sendCommand(command);
+    log('INFO', 'Motors on, holding the last read positions');
+  }
   async function press(command) {
-    guard(); epoch++; busy = false; await sendCommand(command);
+    guard(); epoch++; busy = false;
+    const token = epoch;
+    if (command === 'fp') { await readPositions(token).catch(error => { if (error.message !== STOPPED) throw error; }); setState(); return; }
+    if (command === 'fP') { livePositions(token); setState('Reading positions live · press any command to stop'); return; }
+    if (command === '#on') { await motorsOn(); setState(); return; }
+    await sendCommand(command);
     // gb/gB are developer mode's own commands, so keep its state truthful when they are sent directly.
     if (command === 'gb' || command === 'gB') { developerMode = command === 'gb'; log('INFO', developerMode ? 'Gyro off · developer mode on' : 'Gyro on · developer mode off'); }
     setState();
@@ -174,5 +218,5 @@ export function createLink() {
     markBusy(value, text) { busy = !!value; setState(text); },
   });
   // Live getters (Object.assign would copy their current values instead).
-  return Object.defineProperties(events, {connected: {get: () => connected}, developerMode: {get: () => developerMode}});
+  return Object.defineProperties(events, {connected: {get: () => connected}, developerMode: {get: () => developerMode}, lastJoints: {get: () => lastJoints}});
 }

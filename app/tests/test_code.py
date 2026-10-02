@@ -192,6 +192,24 @@ class CodeWorkbenchTest(unittest.TestCase):
         direct = self.c.post(f"/api/motions/{item['id']}/skill", json={'mapping': mapping}).json()
         self.assertEqual((compiled['skill'], compiled['signature']), (direct['skill'], direct['metadata']['signature']))
         self.c.put('/api/controls', json={'controls': []})
+        # A saved function exports straight to Python with its own settings; the timeline is left untouched.
+        self.c.post('/api/frames', json={'frames': []})
+        exported = self.c.post(f"/api/motions/{item['id']}/export", json={'mapping': mapping})
+        self.assertEqual(exported.status_code, 200, exported.text)
+        self.assertIn('PetoiRobot', exported.text)
+        self.assertIn("'type': 'behavior'", exported.text)
+        self.assertEqual(self.c.get('/api/model').json()['frames'], [])
+        # Several functions export as one script that plays them in the chosen order.
+        second = self.c.post('/api/motions', json={'name': 'Hold', 'motion_type': 'pose', 'hz': 25, 'speed': 1, 'direction': 'forward'}).json()
+        combined = self.c.post('/api/motion-sequence/export', json={'ids': [second['id'], item['id']], 'mapping': mapping})
+        self.assertEqual(combined.status_code, 200, combined.text)
+        self.assertIn("'type': 'sequence'", combined.text)
+        self.assertLess(combined.text.index("'name': 'Hold'"), combined.text.index("'name': 'Test wave'"))
+        self.assertEqual(self.c.post('/api/motion-sequence/export', json={'ids': [], 'mapping': mapping}).status_code, 400)
+        self.assertEqual(self.c.post('/api/motion-sequence/export', json={'ids': ['missing'], 'mapping': mapping}).status_code, 400)
+        self.c.delete(f"/api/motions/{second['id']}")
+        unverified = json.loads(json.dumps(mapping)); unverified[name]['verified'] = False
+        self.assertEqual(self.c.post(f"/api/motions/{item['id']}/export", json={'mapping': unverified}).status_code, 400)
         self.assertEqual(self.c.delete(f"/api/motions/{item['id']}").status_code, 200)
         self.assertFalse(any(m['id'] == item['id'] for m in self.c.get('/api/motions').json()['motions']))
 

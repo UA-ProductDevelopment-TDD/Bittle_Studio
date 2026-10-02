@@ -11,7 +11,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function initHardware({api, toast, getModel, getMapping, refresh}) {
   const $ = id => document.getElementById(id);
   const link = createLink();
-  let motions = [];
+  let motions = [], sequence = [];  // sequence: function ids ticked for a combined export, in click order
 
   link.addEventListener('log', ({detail}) => {
     const time = new Date().toLocaleTimeString([], {hour12: false});
@@ -39,11 +39,47 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   function renderLibrary() {
     const {connected, busy} = link.status(), q = $('functionSearch').value.trim().toLowerCase();
     $('customFunctions').replaceChildren(); if (!motions.length) { const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No functions yet. Make a motion, then press ★ Save as function.'; $('customFunctions').append(p); }
-    for (const item of motions.filter(item => !q || item.name.toLowerCase().includes(q))) { const actions = document.createElement('div'); actions.className = 'row-actions'; for (const [label, action] of [['Load', loadSaved], ['Run', playSaved], ['×', deleteSaved]]) { const button = document.createElement('button'); button.textContent = label; button.title = {Load: 'Put this function back on the timeline', Run: 'Play in the simulator, and on the robot when connected', '×': 'Delete this function'}[label]; if (label === 'Run') button.dataset.motionPlay = item.id; button.onclick = () => action(item).catch(error => toast(error.message, true)); actions.append(button); } $('customFunctions').append(functionRow(item.name, `${item.motion_type} · ${item.hz} Hz · ${item.frames.length} keyframes`, actions)); }
+    for (const item of motions.filter(item => !q || item.name.toLowerCase().includes(q))) { const actions = document.createElement('div'); actions.className = 'row-actions'; for (const [label, action] of [['Load', loadSaved], ['Run', playSaved], ['Python', exportSaved], ['×', deleteSaved]]) { const button = document.createElement('button'); button.textContent = label; button.title = {Load: 'Put this function back on the timeline', Run: 'Play in the simulator, and on the robot when connected', Python: 'Download this function as a PetoiRobot Python script', '×': 'Delete this function'}[label]; if (label === 'Run') button.dataset.motionPlay = item.id; button.onclick = () => action(item).catch(error => toast(error.message, true)); actions.append(button); } const row = functionRow(item.name, `${item.motion_type} · ${item.hz} Hz · ${item.frames.length} keyframes`, actions); const position = sequence.indexOf(item.id); const pick = Object.assign(document.createElement('button'), {type: 'button', className: 'sequence-pick' + (position >= 0 ? ' picked' : ''), textContent: position >= 0 ? String(position + 1) : ''}); pick.title = position >= 0 ? `Number ${position + 1} in the export · click to remove` : 'Add to the combined Python export'; pick.setAttribute('aria-pressed', String(position >= 0)); pick.onclick = () => { sequence = position >= 0 ? sequence.filter(id => id !== item.id) : [...sequence, item.id]; renderLibrary(); }; row.prepend(pick); $('customFunctions').append(row); }
+    $('exportSequence').disabled = !sequence.length; $('clearSequence').disabled = !sequence.length; $('runSequence').disabled = !sequence.length;
+    $('exportSequence').textContent = sequence.length > 1 ? `Export ${sequence.length} ↗` : 'Export selected ↗';
+    $('sequenceHint').textContent = sequence.length ? sequence.map(id => motions.find(m => m.id === id)?.name).join(' → ') : 'Tick functions in the order they should play.';
   }
-  async function refreshMotions() { motions = (await api('/api/motions')).motions; renderLibrary(); consolePanel.refreshLibrary(); }
+  async function refreshMotions() { motions = (await api('/api/motions')).motions; sequence = sequence.filter(id => motions.some(m => m.id === id)); renderLibrary(); consolePanel.refreshLibrary(); }
   async function loadSaved(item) { await api(`/api/motions/${item.id}/load`, {}); await refresh?.(); toast(`Loaded “${item.name}” into the timeline.`); }
   async function playSaved(item) { control.cancelSequence(); await Promise.all([simulate({motion_id: item.id}), link.connected ? resolveMotion(item.id).then(entry => link.runSkill(entry, item.name)) : null]); }
+  async function exportSaved(item) {
+    // The function's own type, Hz, speed and order are used; the timeline is left untouched.
+    const file = `bittle_${safeName(item.name)}.py`;
+    await downloadPython(`/api/motions/${item.id}/export`, {mapping: getMapping()}, file);
+    toast(`Downloaded “${item.name}” as ${file} (${item.motion_type}). Run it without flags for a dry run.`);
+  }
+  async function downloadPython(url, body, file) {
+    let response;
+    try { response = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); }
+    catch { throw new Error('The Bittle Studio server is not running. Start launch-studio.cmd (keep its window open), then reload this page.'); }
+    if (!response.ok) { let detail = response.statusText; try { detail = (await response.json()).detail; } catch {} throw new Error(typeof detail === 'string' ? detail : 'Export failed'); }
+    const href = URL.createObjectURL(new Blob([await response.text()], {type: 'text/x-python'}));
+    Object.assign(document.createElement('a'), {href, download: file}).click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
+  }
+  const safeName = name => name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'motion';
+  // Preview the ticked functions with the exported script's pacing (pose held 1 s, gait one cycle, 0.3 s between).
+  const SEQUENCE_GAP_MS = 300, POSE_HOLD_MS = 1000;
+  const functionMs = item => item.motion_type === 'pose' ? POSE_HOLD_MS : Math.round((item.frames.at(-1)?.time || 0) / (item.speed || 1) * 1000);
+  async function runSelected() {
+    const items = sequence.map(id => motions.find(m => m.id === id)).filter(Boolean);
+    const steps = items.map(item => ({kind: 'motion', motion_id: item.id, wait_ms: functionMs(item) + SEQUENCE_GAP_MS}));
+    toast(`Playing ${items.map(item => item.name).join(' → ')}${link.connected ? ' on the simulator and the robot' : ' in the simulator'}. Stop or Esc interrupts.`);
+    await control.runSequence({name: 'Selected functions', repeat: false, steps});
+    // Like the exported script, end after the last function: a gait would otherwise keep looping.
+    if (items.at(-1)?.motion_type === 'gait') await control.stop();
+    else await api('/api/command', {action: 'pose', pose: {}});
+  }
+  async function exportSequence() {
+    const names = sequence.map(id => motions.find(m => m.id === id)?.name);
+    const file = `bittle_${safeName(names.join('_then_')).slice(0, 60)}.py`;
+    await downloadPython('/api/motion-sequence/export', {ids: sequence, mapping: getMapping()}, file);
+    toast(`Downloaded ${file}: ${names.join(' → ')} (gaits play one cycle). Run it without flags for a dry run.`);
+  }
   async function deleteSaved(item) { await api(`/api/motions/${item.id}`, {}, 'DELETE'); await refreshMotions(); toast(`Deleted “${item.name}”.`); }
   async function voiceAct(code, duration = 800) { if (link.developerMode) throw new Error('Voice actions are blocked by developer mode.'); const item = catalog.find(entry => entry.code === code); if (!item) throw new Error('Unknown Petoi function code.'); await link.sendCommand(item.code); if (item.walking) { await sleep(Math.max(200, Math.min(3000, duration))); await link.sendCommand('kbalance'); } return {status: link.status().testMode ? 'simulated' : 'sent', command: item.code}; }
   async function setDeveloperMode(enabled) { await link.setDeveloperMode(enabled); window.dispatchEvent(new CustomEvent('bittle-developer-mode', {detail: {enabled}})); }
@@ -77,6 +113,18 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   Object.defineProperties(control, {connected: {get: () => true}, developerMode: {get: () => link.developerMode}});
   link.addEventListener('state', () => control.dispatchEvent(new CustomEvent('state', {detail: controlStatus()})));
 
+  // Real joint positions reported by the robot (Read / Live positions) pose the simulated Bittle through Servo setup.
+  let lastFeedbackAt = 0;
+  link.addEventListener('joints', ({detail}) => {
+    const now = performance.now();
+    if (now - lastFeedbackAt < 90) return;
+    lastFeedbackAt = now;
+    const map = getMapping(), pose = {};
+    for (const [joint, m] of Object.entries(map))
+      if (Number.isInteger(m.servo) && m.servo >= 0 && m.servo < 16) pose[joint] = (detail.angles[m.servo] - Number(m.offset || 0)) / (m.sign || 1);
+    if (Object.keys(pose).length) api('/api/command', {action: 'pose', pose}).catch(() => {});
+  });
+
   // Joint sliders in the inspector mirror to the robot's servos when connected (rate-limited, packed per BLE packet).
   const pendingServos = new Map(); let servoTimer = null;
   function mirrorServos(entries) {
@@ -92,7 +140,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
 
   const consolePanel = initConsole($('hardwareConsole'), {
     link: control, toast, joints: false, tabs: true, extraTabs: [{label: 'Joints', element: $('jointsSection')}],
-    statusText: detail => detail.robot ? `Simulator + robot · ${detail.testMode ? 'test mode, nothing is sent' : detail.transport === 'ble' ? 'Bluetooth BLE' : 'serial'}` : 'Simulator only · connect in Bluetooth to drive the robot too',
+    statusText: detail => detail.robot ? `Simulator + robot (${detail.testMode ? 'test mode' : detail.transport === 'ble' ? 'BLE' : 'serial'})` : 'Simulator only · connect via Bluetooth for the robot',
     store: {load: async () => (await api('/api/controls')).controls, save: async controls => (await api('/api/controls', {controls}, 'PUT')).controls},
     library: {list: () => motions, resolve: resolveMotion},
     tools: [
@@ -117,6 +165,9 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   $('hardwareTerminal').onsubmit = event => { event.preventDefault(); link.sendCommand($('hardwareCommand').value).catch(error => toast(error.message, true)); };
   $('developerMode').onchange = () => setDeveloperMode($('developerMode').checked).catch(error => { render(); toast(error.message, true); });
   $('functionSearch').oninput = renderLibrary;
+  $('exportSequence').onclick = () => exportSequence().catch(error => toast(error.message, true));
+  $('clearSequence').onclick = () => { sequence = []; renderLibrary(); };
+  $('runSequence').onclick = () => runSelected().catch(error => toast(error.message, true));
   const stopIfBusy = () => { if (link.status().busy) link.stop().catch(error => toast(error.message, true)); };
   $('hardwareDialog').addEventListener('close', stopIfBusy); document.addEventListener('visibilitychange', () => { if (document.hidden) stopIfBusy(); }); window.addEventListener('pagehide', () => link.cleanup());
 

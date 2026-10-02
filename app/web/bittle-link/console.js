@@ -13,7 +13,10 @@ const POSTURES = [['kbalance', 'Balance'], ['kup', 'Stand up'], ['ksit', 'Sit'],
 const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['kgdb', 'Goodbye'], ['khg', 'Hug'], ['kchr', 'Cheer'], ['knd', 'Nod'], ['kwh', 'Head wave'], ['ksnf', 'Sniff'], ['kscrh', 'Scratch'], ['kck', 'Check'], ['kdg', 'Dig'], ['kpee', 'Pee'], ['kpu', 'Push-ups'], ['kpu1', 'One-arm push-up'], ['kbx', 'Box'], ['kkc', 'Kick'], ['kjmp', 'Jump'], ['kmw', 'Moonwalk'], ['kts', 'Twist'], ['kzz', 'Zigzag'], ['krl', 'Roll'], ['kpd', 'Play dead'], ['krc', 'Recover'], ['kff', 'Front flip', true], ['kbf', 'Back flip', true]];
 // Robot settings. Gyro: gB enables balance/gyro assistance, gb disables it (the same commands developer mode sends).
 // Petoi voice command module: XAc enables its reply tone and reactions, XAd silences and disables them.
-const MODULES = [['gB', 'Gyro on', 'balance/gyro assistance'], ['gb', 'Gyro off', 'balance/gyro assistance'], ['XAc', 'Voice module on', 'Petoi voice command module'], ['XAd', 'Voice module off', 'Petoi voice command module']];
+// Servos: d = rest pose then all servos off; #on = servos back on holding the last read positions (link.js macro);
+// fp / fP = soft servos and read the real joint angles once / continuously (link.js sends f then j).
+const MODULES = [['d', 'Motors off', 'rest pose, then every servo off (limp)'], ['#on', 'Motors on', 'servos back on, holding the last read positions (or balance)'],
+  ['fp', 'Read positions', 'servos go soft; read the real joint angles once'], ['fP', 'Live positions', 'servos go soft; keep reading the real joint angles until another command'], ['gB', 'Gyro on', 'balance/gyro assistance'], ['gb', 'Gyro off', 'balance/gyro assistance'], ['XAc', 'Voice module on', 'Petoi voice command module'], ['XAd', 'Voice module off', 'Petoi voice command module']];
 // Direct servo control with OpenCat's ASCII "i index angle" command, in firmware (servo) degrees.
 const SERVOS = [[0, 'Head (neck)'], [8, 'Left front shoulder'], [12, 'Left front knee'], [9, 'Right front shoulder'], [13, 'Right front knee'],
   [11, 'Left back shoulder'], [15, 'Left back knee'], [10, 'Right back shoulder'], [14, 'Right back knee']];

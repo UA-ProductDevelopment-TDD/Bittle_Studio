@@ -18,8 +18,12 @@ function toast(message, error = false) {
   $('toast').textContent = message; $('toast').className = 'show' + (error ? ' error' : '');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').className = '', error ? 11000 : 5000);
 }
+// A network failure means the local server is gone (window closed or stopped), not a bad request.
+const SERVER_OFFLINE = 'The Bittle Studio server is not running. Start launch-studio.cmd (keep its window open), then reload this page.';
 async function api(url, data, method = 'POST') {
-  const response = await fetch(url, data === undefined ? {} : {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+  let response;
+  try { response = await fetch(url, data === undefined ? {} : {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}); }
+  catch { throw new Error(SERVER_OFFLINE); }
   if (!response.ok) { let message; try { message = (await response.json()).detail; } catch { message = response.statusText; } throw new Error(typeof message === 'string' ? message : JSON.stringify(message)); }
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response.text();
 }
@@ -44,6 +48,7 @@ function label(name) {return name.replace(/-joint$/, '').replaceAll('-', ' ').re
 function tab(name) {
   // The inspector always shows Control; object and extra-robot properties appear under the Stage list.
   ['object', 'actor'].forEach(t => $(t + 'Panel').classList.toggle('hidden', name !== t));
+  if (name === 'object' || name === 'actor') document.querySelector('.objects-section').open = true;  // show what was just selected
   $('mainPlacement').classList.toggle('hidden', name !== 'pose' || timelineTarget !== 'main');
 }
 document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => tab(el.dataset.tab)));
@@ -286,7 +291,8 @@ async function testJoint(j,m,button){
     toast(live?`${label(j.name)}: servo ${m.servo} moved ${delta>0?'+':''}${delta}° and back. Did the real joint match the simulation?`:`${label(j.name)} moved in the simulation. Connect in Bluetooth to move the real servo too.`);
   }finally{button.disabled=false;}
 }
-function openServoSetup(){const robot=timelineModel();$('exportHz').value=$('motionHz').value;$('exportDirection').value=$('motionDirection').value;mapping=structuredClone(robot.mapping);$('mapping').replaceChildren();
+// Servo setup: servo number, direction and offset per joint, with Test and Verified. Python export lives on the functions.
+function openServoSetup(){const robot=timelineModel();mapping=structuredClone(robot.mapping);$('mapping').replaceChildren();
   for(const j of robot.joints){const m=mapping[j.name];const row=document.createElement('div');row.className='mapping-row';const name=document.createElement('span');name.textContent=label(j.name);
     const servo=document.createElement('input');servo.type='number';servo.min=0;servo.max=15;servo.value=m.servo;servo.setAttribute('aria-label',label(j.name)+' servo index');
     const sign=document.createElement('select');sign.innerHTML='<option value="1">+1</option><option value="-1">−1</option>';sign.value=m.sign;sign.setAttribute('aria-label',label(j.name)+' direction');
@@ -299,10 +305,7 @@ function openServoSetup(){const robot=timelineModel();$('exportHz').value=$('mot
     test.onclick=()=>testJoint(j,m,test).catch(e=>toast(e.message,true));
     row.classList.toggle('verified',!!m.verified);row.append(name,servo,sign,offset,test,verified);$('mapping').append(row);}
   $('exportDialog').showModal();}
-on('export',openServoSetup);on('servoSetup',openServoSetup);
-const exportBody=()=>({target:timelineTarget,mapping,motion_type:$('exportType').value,speed:Number($('exportSpeed').value),hz:Number($('exportHz').value),direction:$('exportDirection').value});
-on('exportType',()=>{$('exportLoop').checked=$('exportType').value==='gait';},'change');
-on('downloadCode',async()=>{const code=await api('/api/export',exportBody());timelineModel().mapping=structuredClone(mapping);download(label(timelineModel().name||'bittle')+'_motion.py',code,'text/x-python');toast($('exportType').value==='gait'?'Python gait exported. It repeats until Ctrl+C.':'Python motion exported. Run without flags for a dry run.');});
+on('servoSetup',openServoSetup);
 document.addEventListener('keydown',e=>{if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('input,textarea,select,button,summary')||document.querySelector('dialog[open]:modal'))return;if(e.key.toLowerCase()==='f')focusRobot();if(e.code==='Space'){e.preventDefault();$('play').click();}});
 
 on('openCode',()=>codePanel?.show());
@@ -320,7 +323,6 @@ on('saveFunctionForm',async e=>{e.preventDefault();const name=$('saveFunctionNam
   toast(`Saved “${name}”. Run it in Bluetooth → Functions, or add it to a console button.`);},'submit');
 on('objectCode',()=>codePanel.forTarget(selected));
 on('actorCode',()=>codePanel.forTarget(selectedActor));
-on('testExport',async()=>{const result=await api('/api/motion-code',exportBody());timelineModel().mapping=structuredClone(mapping);$('exportDialog').close();await codePanel.addSource(result.source,'motion.py',timelineTarget);toast(result.metadata.loop?'Gait Python is running-ready; use Stop all to end its loop.':'Exported Python is ready to run in simulation.');});
 on('playFromStart',async()=>{if(frameList.length<2)throw Error('Add at least two keyframes');await robotCommand('play',{value:true,from_start:true,loop:$('loop').checked,speed:Number($('speed').value),hz:Number($('motionHz').value),direction:$('motionDirection').value});});
 for(const id of ['motionHz','motionDirection'])on(id,async()=>{await robotCommand('settings',{motion_hz:Number($('motionHz').value),direction:$('motionDirection').value});timelineModel().motion_hz=Number($('motionHz').value);timelineModel().direction=$('motionDirection').value;},'change');
 

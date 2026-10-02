@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, upgrade_bundled_robot, url_path, vector
-from motion_export import build_motion, firmware_skill, python_motion
+from motion_export import build_motion, firmware_skill, python_motion, python_script, sequence_samples
 from scripting import ScriptRunner, validate_scripts
 import skills
 from packs import list_packs, pack_path, save_pack, validate_controls
@@ -409,6 +409,52 @@ def export_motion(body: dict):
         script, mapping, metadata = python_motion(robot, body)
         robot.mapping = mapping
         return PlainTextResponse(script)
+
+
+@app.post('/api/motions/{motion_id}/export')
+def export_saved_motion(motion_id: str, body: dict):
+    """PetoiRobot Python script for a saved function, using its own type, Hz, speed and order; the timeline is untouched."""
+    with sim.lock:
+        item = next((item for item in sim.motions if item['id'] == motion_id), None)
+        if item is None:
+            raise ValueError('Saved motion not found')
+        original, original_targets = sim.frames, sim.targets
+        try:
+            sim.set_frames(item['frames'])
+            sim.targets = item['pose'].copy()
+            settings = {key: item[key] for key in ('motion_type', 'hz', 'speed', 'direction')}
+            script, mapping, _ = python_motion(sim, {**settings, 'mapping': body.get('mapping', sim.mapping)})
+            sim.mapping = mapping
+        finally:
+            sim.frames, sim.targets = original, original_targets
+        return PlainTextResponse(script)
+
+
+@app.post('/api/motion-sequence/export')
+def export_motion_sequence(body: dict):
+    """One PetoiRobot script that plays several saved functions in the given order (gaits play one cycle)."""
+    ids = body.get('ids')
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 30:
+        raise ValueError('Choose between 1 and 30 functions')
+    with sim.lock:
+        mapping, parts = body.get('mapping', sim.mapping), []
+        original, original_targets = sim.frames, sim.targets
+        try:
+            for motion_id in ids:
+                item = next((m for m in sim.motions if m['id'] == motion_id), None)
+                if item is None:
+                    raise ValueError('Saved motion not found')
+                sim.set_frames(item['frames'])
+                sim.targets = item['pose'].copy()
+                motion_type = 'behavior' if item['motion_type'] == 'gait' else item['motion_type']
+                samples, mapping, metadata = build_motion(sim, {'motion_type': motion_type, 'hz': item['hz'], 'speed': item['speed'],
+                                                                'direction': item['direction'], 'mapping': mapping}, hardware=True)
+                parts.append((item['name'], samples, metadata))
+        finally:
+            sim.frames, sim.targets = original, original_targets
+        samples, metadata = sequence_samples(parts)
+        sim.mapping = mapping
+        return PlainTextResponse(python_script(samples, mapping, metadata))
 
 
 @app.post('/api/motion-code')

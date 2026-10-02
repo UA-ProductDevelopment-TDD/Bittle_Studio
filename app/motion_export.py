@@ -9,7 +9,8 @@ def build_motion(sim, body, hardware=True):
     if motion_type not in ('pose', 'behavior', 'gait'):
         raise ValueError('Motion type must be pose, behavior or gait')
     if motion_type != 'pose' and len(sim.frames) < 2:
-        raise ValueError('Add at least two keyframes before exporting a behavior or gait')
+        raise ValueError(f'A behavior or gait needs at least two keyframes; the timeline has {len(sim.frames)}. '
+                         'Add keyframes, or choose Motion type: Pose to export the current pose.')
     mapping = body.get('mapping', sim.mapping)
     used, problems = set(), []
     for joint in sim.joints:
@@ -106,10 +107,36 @@ def firmware_skill(sim, body):
 
 def python_motion(sim, body, hardware=True):
     samples, mapping, metadata = build_motion(sim, body, hardware)
+    return python_script(samples, mapping, metadata), mapping, metadata
+
+
+SEQUENCE_GAP_S = .3   # pause between functions in a sequence
+POSE_HOLD_S = 1.      # how long a pose function is held inside a sequence
+
+
+def sequence_samples(parts):
+    """Join several functions' samples [(name, samples, metadata)] end to end into one timed list."""
+    samples, steps, offset = [], [], 0.
+    for name, part, metadata in parts:
+        start = offset
+        for timestamp, values in part:
+            samples.append([round(offset + timestamp, 8), values])
+        length = part[-1][0] if part else 0.
+        if metadata['type'] == 'pose':
+            length = POSE_HOLD_S
+            samples.append([round(offset + length, 8), part[-1][1]])
+        steps.append({'name': name, 'type': metadata['type'], 'start': round(start, 3), 'duration': round(length, 3)})
+        offset += length + SEQUENCE_GAP_S
+    metadata = {'type': 'sequence', 'loop': False, 'hz': max(m['hz'] for _, _, m in parts),
+                'duration': round(samples[-1][0], 3), 'samples': len(samples), 'sequence': steps}
+    return samples, metadata
+
+
+def python_script(samples, mapping, metadata):
     return '''"""Bittle Studio motion. Hardware: --execute. Without flags: dry run.
 In Studio's code panel PetoiRobot is replaced by the selected simulation target.
 Uses I (simultaneous), not M (sequential). Requested Hz is not guaranteed by serial hardware.
-Pose and behavior exports run once. A gait repeats until Ctrl+C.
+Pose, behavior and sequence exports run once. A gait repeats until Ctrl+C.
 """
 import argparse
 import time
@@ -161,4 +188,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-''', mapping, metadata
+'''
