@@ -5,6 +5,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { bittleServo, renderJointLayout } from './bittle-link/joint-layout.js';
 
 const $ = id => document.getElementById(id);
 let model, state, selected = null, selectedFrame = null, frameList = [], mapping = {}, loading = false, timelineTarget = 'main';
@@ -210,13 +211,21 @@ function render() {requestAnimationFrame(render);controls.update();if(selected&&
 
 function buildJoints() {
   const robot=timelineModel();if(!robot)return;
+  const setJoint=(j,value,slider,number)=>{const v=Number(value);if(!Number.isFinite(v))return;const clamped=Math.max(j.lower,Math.min(j.upper,v));number.value=clamped.toFixed(1);slider.value=clamped;pendingPose[j.name]=clamped;clearTimeout(poseTimer);poseTimer=setTimeout(flushPose,40);};
+  // A Bittle-shaped robot (every joint maps to a distinct OpenCat servo) gets the Skill Composer layout; any other URDF keeps the list.
+  const servos=robot.joints.map(j=>bittleServo(j.name));
+  if(servos.every(s=>s>=0)&&new Set(servos).size===servos.length){
+    $('jointControls').classList.add('composer');
+    renderJointLayout($('jointControls'),robot.joints.map((j,i)=>({servo:servos[i],label:label(j.name),title:servos[i]===0?'Head pan':/knee/.test(j.name)?'Knee':'Shoulder',min:j.lower,max:j.upper,step:.1,value:robot.targets[j.name]??0,sliderId:'joint-'+j.id,numberId:'angle-'+j.id,onInput:(v,slider,number)=>setJoint(j,v,slider,number),onCommit:(v,slider,number)=>setJoint(j,v,slider,number)})));
+    return;
+  }
+  $('jointControls').classList.remove('composer');
   $('jointControls').replaceChildren();
   for(const j of robot.joints) {
     const row=document.createElement('div');row.className='joint';const head=document.createElement('div');head.className='joint-head';const l=document.createElement('label');l.textContent=label(j.name);l.htmlFor='joint-'+j.id;
     const number=document.createElement('input');number.type='number';number.min=j.lower.toFixed(2);number.max=j.upper.toFixed(2);number.step='.1';number.id='angle-'+j.id;number.setAttribute('aria-label',label(j.name)+' degrees');
     const slider=document.createElement('input');slider.type='range';slider.min=j.lower;slider.max=j.upper;slider.step='.1';slider.id='joint-'+j.id;slider.value=number.value=robot.targets[j.name]??0;
-    const change=el=>{const value=Number(el.value);if(!Number.isFinite(value))return;const clamped=Math.max(j.lower,Math.min(j.upper,value));number.value=clamped.toFixed(1);slider.value=clamped;pendingPose[j.name]=clamped;clearTimeout(poseTimer);poseTimer=setTimeout(flushPose,40);};
-    slider.oninput=()=>change(slider);number.onchange=()=>change(number);head.append(l,number);
+    slider.oninput=()=>setJoint(j,slider.value,slider,number);number.onchange=()=>setJoint(j,number.value,slider,number);head.append(l,number);
     const limits=document.createElement('div');limits.className='joint-limits';limits.innerHTML=`<span>${Math.round(j.lower)}°</span><span>${Math.round(j.upper)}°</span>`;row.append(head,slider,limits);$('jointControls').append(row);
   }
 }

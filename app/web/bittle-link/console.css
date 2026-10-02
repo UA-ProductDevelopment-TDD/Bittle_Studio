@@ -18,6 +18,58 @@
 .console-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
 .console-grid button { padding: 8px 6px; font-size: 12px; white-space: normal; line-height: 1.25; }
 .console-grid button.risky { color: #f4c16d; border-color: #5f4c2c; }
+.console-joints { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 4px; }
+.console-joints summary { cursor: pointer; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; list-style: none; text-transform: none; letter-spacing: normal; margin: 0; }
+.console-joints summary::-webkit-details-marker { display: none; }
+.console-joints summary h4::before { content: '▸ '; }
+.console-joints[open] summary h4::before { content: '▾ '; }
+.console-joints summary .note { margin: 0; }
+/* Joint panel: Petoi Skill Composer layout, robot seen from above with the head at the top. */
+.joint-sliders { display: grid; grid-template-columns: 1fr minmax(120px, 170px) 1fr; grid-template-areas: "head head head" "lf body rf" "lb body rb"; gap: 12px 16px; margin-top: 10px; align-items: start; }
+.area-head { grid-area: head; justify-self: center; width: min(100%, 520px); } .area-body { grid-area: body; } .area-lf { grid-area: lf; } .area-rf { grid-area: rf; } .area-lb { grid-area: lb; } .area-rb { grid-area: rb; }
+.area-lf, .area-lb { justify-self: end; } .area-rf, .area-rb { justify-self: start; }
+.joint-leg { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; background: #0f171e; }
+.joint-leg-title { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); text-align: center; margin-bottom: 6px; }
+.joint-leg-sliders { display: flex; gap: 10px; }
+.joint-control { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px; border-radius: 7px; border: 1px solid transparent; transition: background .15s, border-color .15s; }
+.joint-control.active { background: #1e2c22; border-color: var(--accent); }
+.joint-label { font-size: 12px; color: #c7d3da; white-space: nowrap; }
+.joint-label b { color: var(--accent); font-family: Consolas, monospace; font-weight: 600; }
+.joint-control input[type=range] { accent-color: var(--accent); padding: 0; }
+.joint-control.vertical input[type=range] { writing-mode: vertical-lr; direction: rtl; height: 150px; width: 22px; }
+.joint-control:not(.vertical) { border-color: var(--line); background: #0f171e; }
+.joint-control:not(.vertical).active { background: #1e2c22; border-color: var(--accent); }
+.joint-control:not(.vertical) input[type=range] { width: 100%; }
+.joint-control input[type=number] { width: 62px; text-align: center; }
+.joint-centre { display: flex; justify-content: center; }
+.joint-diagram { width: 100%; max-width: 170px; height: auto; }
+.joint-diagram .body { fill: #2a3540; stroke: #4f606c; }
+.joint-diagram .head { fill: #3a4752; stroke: #5d6f7c; }
+.joint-diagram .caption { fill: var(--muted); font-size: 8px; text-anchor: middle; letter-spacing: 1px; }
+.joint-diagram .caption.small { font-size: 6px; letter-spacing: 0; }
+.joint-diagram .side { fill: var(--muted); font-size: 9px; text-anchor: middle; font-weight: 600; }
+.servo-dot { cursor: pointer; outline: none; }
+.servo-dot circle { fill: #18222b; stroke: #6b7d8a; stroke-width: 1.2; transition: fill .15s, stroke .15s; }
+.servo-dot text { fill: var(--text); font: 600 8px Consolas, monospace; text-anchor: middle; pointer-events: none; }
+.servo-dot.active circle, .servo-dot:focus-visible circle { fill: var(--accent); stroke: var(--accent); }
+.servo-dot.active text, .servo-dot:focus-visible text { fill: #18250d; }
+.joint-layout { container: joints / inline-size; }
+.joint-range { display: flex; justify-content: space-between; width: 100%; font-size: 10px; color: var(--muted); gap: 6px; }
+.joint-control.vertical .joint-range { justify-content: center; white-space: nowrap; }
+@container joints (max-width: 600px) {
+  .joint-sliders { grid-template-columns: 1fr 1fr; grid-template-areas: "head head" "body body" "lf rf" "lb rb"; gap: 10px; }
+  .joint-diagram { max-width: 130px; }
+  .joint-leg { padding: 6px; }
+  .joint-leg-sliders { gap: 4px; }
+  .joint-control { padding: 4px 2px; }
+  .joint-control input[type=number] { width: 54px; }
+  .area-lf, .area-lb, .area-rf, .area-rb { justify-self: stretch; }
+  .joint-leg-sliders { justify-content: center; }
+  .joint-control.vertical input[type=range] { height: 120px; }
+}
+.joint-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.joint-actions button { font-size: 12px; padding: 6px 10px; }
+.bittle-console.offline .joint-sliders { opacity: .7; }
 .console-custom-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 .console-custom-head .note { margin: 0 0 8px; }
 .console-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }

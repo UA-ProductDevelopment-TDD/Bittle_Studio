@@ -1,4 +1,5 @@
 import {catalog} from './catalog.js';
+import {renderJointLayout} from './joint-layout.js';
 
 // Controller modelled on the Petoi app: gait pad, posture and skill grids, and user-composed buttons.
 // Host-provided pieces keep this UI independent of where buttons and skills are stored:
@@ -12,6 +13,10 @@ const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['k
 // Robot settings. Gyro: gB enables balance/gyro assistance, gb disables it (the same commands developer mode sends).
 // Petoi voice command module: XAc enables its reply tone and reactions, XAd silences and disables them.
 const MODULES = [['gB', 'Gyro on', 'balance/gyro assistance'], ['gb', 'Gyro off', 'balance/gyro assistance'], ['XAc', 'Voice module on', 'Petoi voice command module'], ['XAd', 'Voice module off', 'Petoi voice command module']];
+// Direct servo control with OpenCat's ASCII "i index angle" command, in firmware (servo) degrees.
+const SERVOS = [[0, 'Head (neck)'], [8, 'Left front shoulder'], [12, 'Left front knee'], [9, 'Right front shoulder'], [13, 'Right front knee'],
+  [11, 'Left back shoulder'], [15, 'Left back knee'], [10, 'Right back shoulder'], [14, 'Right back knee']];
+const SERVO_LIMIT = 90, BLE_TEXT = 19, SLIDER_INTERVAL_MS = 80;
 export const COLORS = ['green', 'blue', 'amber', 'red', 'violet', 'grey'];
 const WALKING = new Set(catalog.filter(item => item.walking).map(item => item.code));
 let datalistCount = 0;
@@ -20,6 +25,10 @@ const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
 <div class="console-layout"><div class="console-drive"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
 <div class="console-actions"><h4>Postures</h4><div data-part="postures" class="console-grid"></div><h4>Skills</h4><div data-part="skills" class="console-grid"></div><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div></div></div>
+<details data-part="jointPanel" class="console-joints" open><summary><h4>Joints</h4><span class="note">Move each servo directly (servo degrees, sent as <code>i servo angle</code>).</span></summary>
+<div data-part="joints" class="joint-sliders"></div>
+<div class="joint-actions"><button type="button" data-part="jointsZero">All to 0°</button><button type="button" data-part="jointsRelease">Release head</button><button type="button" data-part="jointsRead">Read angles</button></div>
+<p class="note">Sliders show the last angle sent from here, not the robot's live position. Turn the gyro off (Robot settings) so balance correction does not fight the sliders. Start with small moves and keep the robot lifted.</p></details>
 <div class="console-custom-head"><div><h4>My buttons</h4><p data-part="hint" class="note"></p></div><div class="console-tools"><span data-part="tools"></span><label class="check"><input data-part="editMode" type="checkbox"> Edit buttons</label></div></div><div data-part="custom" class="console-grid custom-grid"></div>
 <form data-part="editor" class="console-editor hidden"><div class="editor-head"><h4 data-part="editorTitle">New button</h4><span data-part="summary" class="note"></span></div>
 <div class="editor-fields"><label>Name<input data-part="name" maxlength="40" placeholder="For example: Greet and sit"></label><div class="editor-colors"><span>Colour</span><div data-part="colors"></div></div><label class="check"><input data-part="repeat" type="checkbox"> Repeat until stopped</label></div>
@@ -65,6 +74,50 @@ export function initConsole(root, {link, toast = message => console.warn(message
     list.append(button('+ New button', 'Compose a new button', () => openEditor(null), 'custom-add'));
     part('hint').textContent = controls.length ? (editMode() ? 'Click a button to edit it.' : 'Click to run. Any other press or Stop interrupts it.') : 'Compose buttons from Petoi commands and saved Studio functions.';
   }
+  // Joint sliders: changes are coalesced and sent at most every SLIDER_INTERVAL_MS, packing as many
+  // "index angle" pairs into one i-command as fit in a BLE text packet.
+  const jointValues = new Map(SERVOS.map(([index]) => [index, 0])), pendingJoints = new Map();
+  let jointTimer = null;
+  function jointCommands(entries) {
+    const commands = []; let current = 'i';
+    for (const [index, angle] of entries) {
+      const pair = ` ${index} ${angle}`;
+      if (current !== 'i' && (current + pair).length > BLE_TEXT) { commands.push(current); current = 'i'; }
+      current += pair;
+    }
+    if (current !== 'i') commands.push(current);
+    return commands;
+  }
+  async function flushJoints() {
+    jointTimer = null;
+    if (!pendingJoints.size) return;
+    const entries = [...pendingJoints]; pendingJoints.clear();
+    if (!link.connected) return toast(offlineHint, true);
+    for (const command of jointCommands(entries)) await link.press(command).catch(fail);
+    part('last').textContent = `Joints · ${entries.map(([i, a]) => `${i}:${a}°`).join(' ')}`;
+  }
+  function queueJoint(index, angle) {
+    jointValues.set(index, angle); pendingJoints.set(index, angle);
+    if (!jointTimer) jointTimer = setTimeout(flushJoints, SLIDER_INTERVAL_MS);
+  }
+  function renderJoints() {
+    renderJointLayout(part('joints'), SERVOS.map(([servo, label]) => {
+      const set = (value, final, slider, number) => {
+        const angle = Math.max(-SERVO_LIMIT, Math.min(SERVO_LIMIT, Math.round(Number(value) || 0)));
+        slider.value = number.value = angle; queueJoint(servo, angle);
+        // While recording, each finished slider move becomes one command step of the button being edited.
+        if (final && recording()) { editing.steps.push({kind: 'command', command: `i ${servo} ${angle}`, wait_ms: 500}); renderEditor(); }
+      };
+      return {servo, label, title: servo === 0 ? 'Head pan' : label.replace(/^(Left|Right) (front|back) /, '').replace(/^./, c => c.toUpperCase()),
+        min: -SERVO_LIMIT, max: SERVO_LIMIT, step: 1, value: jointValues.get(servo),
+        onInput: (value, slider, number) => set(value, false, slider, number), onCommit: (value, slider, number) => set(value, true, slider, number)};
+    }));
+  }
+  part('jointsZero').onclick = () => { SERVOS.forEach(([index]) => queueJoint(index, 0)); renderJoints(); };
+  part('jointsRelease').onclick = () => link.connected ? link.press('i').then(() => { part('last').textContent = 'Release head · i'; }).catch(fail) : toast(offlineHint, true);
+  part('jointsRead').onclick = () => link.connected ? link.press('j').then(() => toast('Joint angles requested; the robot replies in the log.')).catch(fail) : toast(offlineHint, true);
+  renderJoints();
+
   async function run(item) {
     if (!link.connected) return toast(offlineHint, true);
     activeId = item.id; renderControls();
