@@ -136,6 +136,21 @@ class SimulatedSkillTest(unittest.TestCase):
         # Gaits loop until another command; right turns are mirrored left turns.
         result = c.post('/api/skill', json={'command': 'kwkR'}).json()
         self.assertTrue(result['simulated'] and result['loop'])
+        # T replays the last custom skill (saved function) played in the simulator, like the firmware's T slot.
+        zero = {j['name']: 0 for j in s.joints}
+        c.post('/api/frames', json={'frames': [{'time': 0, 'pose': zero}, {'time': .4, 'pose': {**zero, 'neck-joint': 25}}]})
+        custom = c.post('/api/motions', json={'name': 'Nod test', 'motion_type': 'behavior', 'hz': 20, 'speed': 1, 'direction': 'forward'}).json()
+        c.post('/api/frames', json={'frames': []})
+        self.assertTrue(c.post('/api/skill', json={'motion_id': custom['id']}).json()['simulated'])
+        self.settle(1.2)
+        c.post('/api/skill', json={'command': 'm 0 -10'}); self.settle(.5)
+        replay = c.post('/api/skill', json={'command': 'T'}).json()
+        self.assertTrue(replay['simulated'])
+        self.assertEqual(replay['name'], 'Nod test')
+        self.settle(1.2)
+        self.assertAlmostEqual(s.targets['neck-joint'], 25, delta=.5)
+        c.delete(f"/api/motions/{custom['id']}")
+        c.post('/api/skill', json={'command': 'kwkR'})  # a running gait for the next check
         # Commands without a joint effect are reported as not simulated.
         self.assertFalse(c.post('/api/skill', json={'command': 'gB'}).json()['simulated'])
         self.assertIsNotNone(s.skill)  # gB did not stop the gait

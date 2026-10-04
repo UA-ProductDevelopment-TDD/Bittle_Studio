@@ -69,7 +69,7 @@
   .joint-control { padding: 2px; gap: 3px; }
   .joint-label { font-size: 10px; white-space: normal; text-align: center; line-height: 1.15; }
   .joint-control.vertical .joint-label b { display: block; }
-  .joint-control.vertical input[type=range] { height: clamp(70px, 12vh, 110px); }
+  .joint-control.vertical input[type=range] { height: clamp(64px, calc(12vh - 18px), 110px); }
   .joint-control input[type=number] { width: 46px; font-size: 11px; padding: 3px 2px; }
   .joint-range { font-size: 9px; }
   .joint-control:not(.vertical) { display: grid; grid-template-columns: auto 1fr 50px; align-items: center; gap: 6px; padding: 4px 8px; }
@@ -150,3 +150,13 @@
 .console-pane.hidden { display: none; }
 .bittle-console.tabbed .console-pane > [data-section] > h4:first-child,
 .bittle-console.tabbed .console-pane > [data-section] > div:first-child h4 { margin-top: 4px; }
+
+/* Section heading with a replay button (Skills, My skills). */
+.bittle-console .section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bittle-console .section-head h4 { margin-bottom: 8px; }
+.bittle-console .replay { font-size: 11px; padding: 4px 9px; border-color: #58724a; color: #d2edae; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%; }
+.bittle-console.tabbed .console-tabs button { font-size: 11px; }
+
+/* Seven tabs: wrap onto two rows rather than clipping names like "Robot settings". */
+.console-tabs { flex-wrap: wrap; row-gap: 0; }
+.console-tabs button { flex: 1 0 auto; padding: 6px 8px; }

@@ -77,7 +77,7 @@ function setPanel(name,visible){panelVisibility[name]=visible;applyPanelLayout()
 document.querySelectorAll('[data-hide-panel]').forEach(button=>button.addEventListener('click',()=>setPanel(button.dataset.hidePanel,false)));
 document.querySelectorAll('[data-window]').forEach(button=>button.addEventListener('click',()=>{
   const name=button.dataset.window;
-  if(name==='serial')window.dispatchEvent(new Event('bittle-toggle-serial'));else if(name==='code')codePanel?.show();else if(name==='robot')openRobotEditor();else if(name==='reset'){panelVisibility={...panelDefaults};applyPanelLayout();codePanel?.hide();}else setPanel(name,!panelVisibility[name]);
+  if(name==='serial')window.dispatchEvent(new Event('bittle-toggle-serial'));else if(name==='voice')$('voiceDialog').open?$('voiceDialog').close():$('voiceDialog').show();else if(name==='code')codePanel?.show();else if(name==='robot')openRobotEditor();else if(name==='reset'){panelVisibility={...panelDefaults};applyPanelLayout();codePanel?.hide();}else setPanel(name,!panelVisibility[name]);
   button.closest('details')?.removeAttribute('open');
 }));
 applyPanelLayout();
@@ -318,7 +318,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&window.bittleHardwa
 // Save the current timeline as a function without opening the Bluetooth panel.
 on('saveAsFunction',()=>{if(frameList.length<1)throw new Error('Add at least one keyframe first.');$('saveFunctionType').value=frameList.length<2?'pose':'behavior';$('saveFunctionDialog').showModal();$('saveFunctionName').focus();});
 on('saveFunctionForm',async e=>{e.preventDefault();const name=$('saveFunctionName').value.trim();if(!name)return;
-  await api('/api/motions',{name,motion_type:$('saveFunctionType').value,hz:Number($('motionHz').value),speed:Number($('hardwareSpeed')?.value||.5),direction:$('motionDirection').value});
+  await api('/api/motions',{name,motion_type:$('saveFunctionType').value,hz:Number($('motionHz').value),speed:.5,direction:$('motionDirection').value});
   $('saveFunctionDialog').close();$('saveFunctionName').value='';await window.bittleHardware?.refreshMotions?.();
   toast(`Saved “${name}”. Run it in Bluetooth → Functions, or add it to a console button.`);},'submit');
 on('objectCode',()=>codePanel.forTarget(selected));

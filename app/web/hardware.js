@@ -14,26 +14,19 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   const link = createLink();
   let motions = [], sequence = [];  // sequence: function ids ticked for a combined export, in click order
 
-  link.addEventListener('log', ({detail}) => {
-    const time = new Date().toLocaleTimeString([], {hour12: false});
-    $('hardwareLog').textContent = (`${time}  ${detail.kind.padEnd(5)}  ${detail.message}\n` + $('hardwareLog').textContent).slice(0, 14000);
-  });
   link.addEventListener('state', render);
   function render() {
     const {connected, busy, developerMode, message, transport} = link.status();
     $('hardwareStatus').textContent = message || (connected ? `Connected · ${transport}` : 'Not connected');
     $('hardwareConnect').disabled = connected; $('hardwareDisconnect').disabled = !connected;
-    $('hardwarePlay').disabled = !connected || busy; $('hardwareStop').disabled = !connected;
-    $('hardwareSend').disabled = !connected || busy; $('hardwareTransport').disabled = connected;
+    $('hardwareTransport').disabled = connected;
     $('developerMode').checked = developerMode;
     $('developerStatus').textContent = developerMode ? (connected ? 'Active · background voice, autonomous actions and gyro/balance assistance are off.' : 'Will activate when connected.') : (connected ? 'Off · balance assistance and voice actions are available.' : 'Off.');
     $('developerStatus').classList.toggle('active', developerMode && connected);
     window.dispatchEvent(new CustomEvent('bittle-hardware-state', {detail: link.status()}));
   }
 
-  const timelineOptions = type => ({mapping: getMapping(), motion_type: type, hz: Number($('hardwareHz').value), speed: Number($('hardwareSpeed').value), direction: $('hardwareDirection').value});
   const skillEntry = (result, name) => ({skill: result.skill, signature: result.metadata.signature, type: result.metadata.type, name});
-  async function playTimelineSkill() { const result = await api('/api/motion-skill', timelineOptions($('hardwareType').value)); await link.runSkill(skillEntry(result, 'Current timeline'), 'Current timeline'); }
   async function resolveMotion(id) { const result = await api(`/api/motions/${id}/skill`, {mapping: getMapping()}); return skillEntry(result, motions.find(item => item.id === id)?.name || 'Studio function'); }
 
   function functionRow(title, detail, actions) { const row = document.createElement('div'); row.className = 'function-row'; const copy = document.createElement('div'); const b = document.createElement('b'), small = document.createElement('small'); b.textContent = title; small.textContent = detail; copy.append(b, small); row.append(copy, actions); return row; }
@@ -155,15 +148,11 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     ],
   });
 
-  document.querySelectorAll('[data-hardware-tab]').forEach(button => button.onclick = () => { document.querySelectorAll('[data-hardware-tab]').forEach(b => b.classList.toggle('selected', b === button)); document.querySelectorAll('.hardware-tab').forEach(panel => panel.classList.toggle('hidden', panel.id !== `hardware-${button.dataset.hardwareTab}-tab`)); });
-  $('openHardware').onclick = () => { const model = getModel(); $('hardwareHz').value = model.motion_hz; $('hardwareDirection').value = model.direction; $('hardwareDialog').open ? $('hardwareDialog').close() : $('hardwareDialog').show(); };
+  $('openHardware').onclick = () => { $('hardwareDialog').open ? $('hardwareDialog').close() : $('hardwareDialog').show(); };
   $('hardwareConnect').onclick = () => link.connect($('hardwareTransport').value)
     .then(() => { if (link.developerMode) window.dispatchEvent(new CustomEvent('bittle-developer-mode', {detail: {enabled: true}})); })
     .catch(error => { $('hardwareStatus').textContent = 'Connection failed'; toast(error.message, true); });
   $('hardwareDisconnect').onclick = () => link.disconnect().catch(error => toast(error.message, true));
-  $('hardwarePlay').onclick = () => playTimelineSkill().catch(error => { link.markBusy(false); toast(error.message, true); });
-  $('hardwareStop').onclick = () => link.stop().catch(error => toast(error.message, true));
-  $('hardwareTerminal').onsubmit = event => { event.preventDefault(); link.sendCommand($('hardwareCommand').value, 'Terminal').catch(error => toast(error.message, true)); };
   $('developerMode').onchange = () => setDeveloperMode($('developerMode').checked).catch(error => { render(); toast(error.message, true); });
   $('functionSearch').oninput = renderLibrary;
   $('exportSequence').onclick = () => exportSequence().catch(error => toast(error.message, true));
@@ -183,6 +172,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     wasConnected = detail.connected;
   });
   $('closeSerial').onclick = () => showSerial(false);
+  $('openSerial').onclick = () => showSerial(serialWindow.classList.contains('hidden'));
   const head = serialWindow.querySelector('.serial-head');
   head.addEventListener('pointerdown', event => {
     if (event.target.closest('button')) return;

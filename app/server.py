@@ -495,6 +495,9 @@ def simulate_skill(body: dict):
             finally:
                 robot.frames = original
             plan = skills.motion_plan(item['name'], poses, step, item['motion_type'] == 'gait')
+            robot.last_custom_plan = plan  # replayed by T, like the firmware's last uploaded skill
+        elif str(body.get('command', '')).strip() == 'T':
+            plan = getattr(robot, 'last_custom_plan', None)
         else:
             plan = skills.plan(body.get('command', ''), robot.mapping)
         if plan is None:

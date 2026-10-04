@@ -35,7 +35,7 @@ let datalistCount = 0;
 const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
 <div class="console-layout"><div class="console-drive" data-section="move"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
-<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><h4>Skills</h4><div data-part="skills" class="console-grid"></div><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div></div></div></div>
+<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="console-grid"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
 <details data-part="jointPanel" class="console-joints" open><summary><h4>Joints</h4><span class="note">Move each servo directly (servo degrees, sent as <code>i servo angle</code>).</span></summary>
 <div data-part="joints" class="joint-sliders"></div>
 <div class="joint-actions"><button type="button" data-part="jointsZero">All to 0°</button><button type="button" data-part="jointsRelease">Release head</button><button type="button" data-part="jointsRead">Read angles</button></div>
@@ -63,7 +63,12 @@ export function initConsole(root, {link, toast = message => console.warn(message
   const functionName = id => functions().find(item => item.id === id)?.name;
 
   // A press sends immediately and, while recording, also appends a step to the button being edited.
+  let lastSkill = null;  // last built-in skill / posture pressed (Skills tab replay)
   function press(command, label, section = '') {
+    if (/^k\w/.test(command) && (section === 'Skills' || section === 'Postures')) {
+      lastSkill = {command, label, section};
+      part('replaySkill').disabled = false; part('replaySkill').textContent = `▶ Play last skill (${label})`;
+    }
     if (recording()) { editing.steps.push({kind: 'command', command, wait_ms: WALKING.has(command.split(' ')[0]) ? 2000 : 1500}); renderEditor(); }
     if (link.connected) link.press(command, section ? `${section} · ${label}` : label).catch(fail);
     else if (!recording()) toast(offlineHint, true);
@@ -76,6 +81,22 @@ export function initConsole(root, {link, toast = message => console.warn(message
     part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label, 'Skills'), risky ? 'risky' : '')));
     part('modules').replaceChildren(...MODULES.map(([code, label, what]) => button(label, `${code} · ${what}`, () => press(code, label, 'Robot settings'))));
     part('tools').replaceChildren(...tools.map(tool => button(tool.label, tool.title, () => Promise.resolve(tool.onClick()).catch(fail))));
+  }
+  function renderMySkills() {
+    const items = functions();
+    part('myskills').replaceChildren(...items.map(item => {
+      const b = button(item.name, `${item.motion_type} · plays in the simulator and on the robot when connected`, () => runSkill(item), 'custom-button color-violet');
+      if (item.motion_type === 'gait') b.append(Object.assign(document.createElement('small'), {textContent: '↻'}));
+      return b;
+    }));
+    part('myskillsHint').textContent = items.length ? 'Your saved functions. Make more on the timeline with ★ Save as function.'
+      : library ? 'No custom skills yet: make a motion on the timeline and press ★ Save as function (or import a pack).' : '';
+  }
+  async function runSkill(item) {
+    if (!link.connected) return toast(offlineHint, true);
+    part('last').textContent = `My skills · ${item.name}`;
+    try { await link.runSequence({name: `My skills · ${item.name}`, repeat: false, steps: [{kind: 'motion', motion_id: item.id, wait_ms: 0}]}, {resolveMotion: library && (id => library.resolve(id))}); }
+    catch (error) { fail(error); }
   }
   function renderControls() {
     const list = part('custom'); list.replaceChildren();
@@ -130,7 +151,7 @@ export function initConsole(root, {link, toast = message => console.warn(message
     finally { if (activeId === item.id) { activeId = null; renderControls(); } }
   }
   async function save(next) { controls = await store.save(next); renderControls(); }
-  async function reload() { controls = await store.load(); renderControls(); renderEditor(); }
+  async function reload() { controls = await store.load(); renderControls(); renderEditor(); renderMySkills(); }
 
   function openEditor(item) {
     editing = item ? structuredClone(item) : {id: '', name: '', color: 'green', repeat: false, steps: []};
@@ -188,6 +209,8 @@ export function initConsole(root, {link, toast = message => console.warn(message
   };
   part('delete').onclick = async () => { if (!editing?.id || !confirm(`Delete the button “${editing.name}”?`)) return; try { await save(controls.filter(entry => entry.id !== editing.id)); closeEditor(); } catch (error) { fail(error); } };
   part('stop').onclick = () => link.stop().catch(fail);
+  part('replaySkill').onclick = () => lastSkill && press(lastSkill.command, lastSkill.label, lastSkill.section);
+  part('replayCustom').onclick = () => { if (link.connected) link.press('T', 'My skills · Play last skill').catch(fail); else toast(offlineHint, true); };
   catalog.forEach(item => part('codes').append(new Option(item.label, item.code)));
 
   function onState({detail}) {
@@ -204,7 +227,9 @@ export function initConsole(root, {link, toast = message => console.warn(message
       {label: 'Move', nodes: [root.querySelector('[data-section="move"]')]},
       {label: 'Postures', nodes: [root.querySelector('[data-section="postures"]')]},
       {label: 'Skills', nodes: [root.querySelector('[data-section="skills"]')]},
-      {label: 'Buttons', nodes: [root.querySelector('[data-section="buttons"]')]}];
+      ...(library ? [{label: 'My skills', nodes: [root.querySelector('[data-section="myskills"]')]}] : []),
+      {label: 'Buttons', nodes: [root.querySelector('[data-section="buttons"]')]},
+      {label: 'Robot settings', nodes: [root.querySelector('[data-section="settings"]')]}];
     const select = index => {
       [...bar.children].forEach((b, i) => b.setAttribute('aria-selected', String(i === index)));
       [...panes.children].forEach((pane, i) => pane.classList.toggle('hidden', i !== index));
@@ -225,5 +250,6 @@ export function initConsole(root, {link, toast = message => console.warn(message
   }
   if (tabs) buildTabs();
   renderStatic(); reload().catch(fail);
-  return {reload, refreshLibrary: renderEditor, get controls() { return controls; }};
+  if (!library) root.querySelector('[data-section="myskills"]').remove();
+  return {reload, refreshLibrary: () => { renderEditor(); renderMySkills(); }, get controls() { return controls; }};
 }

@@ -124,3 +124,7 @@ details.control-section > summary span { font-size: 11px; color: var(--muted); }
 .serial-head h2 { font-size: 12px; margin: 0; }
 .serial-head .caption { margin-left: auto; font-size: 10px; color: var(--muted); }
 #serialMonitor { flex: 1; min-height: 0; padding: 8px; }
+
+/* The Bluetooth panel only holds the connection now: compact, docked at the top right. */
+#hardwareDialog[open]:not(:modal) { width: min(440px, 100vw); height: auto; max-height: calc(100vh - 78px); bottom: auto; border-width: 0 0 1px 1px; border-radius: 0 0 0 10px; }
+.voice-dialog[open]:not(:modal) { position: fixed; top: 90px; right: 16px; left: auto; margin: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 110px); z-index: 45; box-shadow: 0 16px 50px #000a; }
