@@ -77,7 +77,7 @@ function setPanel(name,visible){panelVisibility[name]=visible;applyPanelLayout()
 document.querySelectorAll('[data-hide-panel]').forEach(button=>button.addEventListener('click',()=>setPanel(button.dataset.hidePanel,false)));
 document.querySelectorAll('[data-window]').forEach(button=>button.addEventListener('click',()=>{
   const name=button.dataset.window;
-  if(name==='code')codePanel?.show();else if(name==='robot')openRobotEditor();else if(name==='reset'){panelVisibility={...panelDefaults};applyPanelLayout();codePanel?.hide();}else setPanel(name,!panelVisibility[name]);
+  if(name==='serial')window.dispatchEvent(new Event('bittle-toggle-serial'));else if(name==='code')codePanel?.show();else if(name==='robot')openRobotEditor();else if(name==='reset'){panelVisibility={...panelDefaults};applyPanelLayout();codePanel?.hide();}else setPanel(name,!panelVisibility[name]);
   button.closest('details')?.removeAttribute('open');
 }));
 applyPanelLayout();
@@ -285,9 +285,9 @@ async function testJoint(j,m,button){
   if(live&&!(Number.isInteger(m.servo)&&m.servo>=0&&m.servo<=15))throw new Error('Give this joint a servo number first.');
   button.disabled=true;
   try{
-    await robotCommand('pose',{pose:{[j.name]:start+delta}});if(live)await hw.sendCommand(`i ${m.servo} ${servoAngle(start+delta)}`);
+    await robotCommand('pose',{pose:{[j.name]:start+delta}});if(live)await hw.sendCommand(`i ${m.servo} ${servoAngle(start+delta)}`,`Servo setup · Test ${label(j.name)}`);
     await new Promise(r=>setTimeout(r,900));
-    await robotCommand('pose',{pose:{[j.name]:start}});if(live)await hw.sendCommand(`i ${m.servo} ${servoAngle(start)}`);
+    await robotCommand('pose',{pose:{[j.name]:start}});if(live)await hw.sendCommand(`i ${m.servo} ${servoAngle(start)}`,`Servo setup · Test ${label(j.name)}`);
     toast(live?`${label(j.name)}: servo ${m.servo} moved ${delta>0?'+':''}${delta}° and back. Did the real joint match the simulation?`:`${label(j.name)} moved in the simulation. Connect in Bluetooth to move the real servo too.`);
   }finally{button.disabled=false;}
 }

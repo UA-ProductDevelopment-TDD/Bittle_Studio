@@ -21,6 +21,13 @@ const MODULES = [['d', 'Motors off', 'rest pose, then every servo off (limp)'], 
 const SERVOS = [[0, 'Head (neck)'], [8, 'Left front shoulder'], [12, 'Left front knee'], [9, 'Right front shoulder'], [13, 'Right front knee'],
   [11, 'Left back shoulder'], [15, 'Left back knee'], [10, 'Right back shoulder'], [14, 'Right back knee']];
 const SERVO_LIMIT = 90, BLE_TEXT = 19, SLIDER_INTERVAL_MS = 80;
+// English names of console commands (used by the serial monitor to explain what was sent).
+const DIRECTIONS = {F: 'forward', L: 'turning left', R: 'turning right'};
+export const COMMAND_NAMES = Object.fromEntries([
+  ...GAITS.flatMap(([code, label]) => Object.entries(DIRECTIONS).map(([d, name]) => [`k${code}${d}`, `${label} ${name}`])),
+  ...PAD.filter(([, code]) => code.length > 1).map(([, code, title]) => [code, title]),
+  ...POSTURES, ...SKILLS.map(([code, label]) => [code, label]), ...MODULES.map(([code, label]) => [code, label]),
+]);
 export const COLORS = ['green', 'blue', 'amber', 'red', 'violet', 'grey'];
 const WALKING = new Set(catalog.filter(item => item.walking).map(item => item.code));
 let datalistCount = 0;
@@ -56,18 +63,18 @@ export function initConsole(root, {link, toast = message => console.warn(message
   const functionName = id => functions().find(item => item.id === id)?.name;
 
   // A press sends immediately and, while recording, also appends a step to the button being edited.
-  function press(command, label) {
+  function press(command, label, section = '') {
     if (recording()) { editing.steps.push({kind: 'command', command, wait_ms: WALKING.has(command.split(' ')[0]) ? 2000 : 1500}); renderEditor(); }
-    if (link.connected) link.press(command).catch(fail);
+    if (link.connected) link.press(command, section ? `${section} · ${label}` : label).catch(fail);
     else if (!recording()) toast(offlineHint, true);
     part('last').textContent = `${label} · ${command}`;
   }
   function renderStatic() {
     part('gaits').replaceChildren(...GAITS.map(([code, label]) => { const b = button(label, `k${code}F / L / R`, () => { gait = code; renderStatic(); }); b.classList.toggle('selected', code === gait); return b; }));
-    part('pad').replaceChildren(...PAD.map(([glyph, code, title]) => { const command = code.length === 1 ? `k${gait}${code}` : code; return button(glyph, `${title} · ${command}`, () => press(command, title), code === 'kbalance' ? 'pad-stop' : ''); }));
-    part('postures').replaceChildren(...POSTURES.map(([code, label]) => button(label, code, () => press(code, label))));
-    part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label), risky ? 'risky' : '')));
-    part('modules').replaceChildren(...MODULES.map(([code, label, what]) => button(label, `${code} · ${what}`, () => press(code, label))));
+    part('pad').replaceChildren(...PAD.map(([glyph, code, title]) => { const command = code.length === 1 ? `k${gait}${code}` : code; return button(glyph, `${title} · ${command}`, () => press(command, title, 'Move'), code === 'kbalance' ? 'pad-stop' : ''); }));
+    part('postures').replaceChildren(...POSTURES.map(([code, label]) => button(label, code, () => press(code, label, 'Postures'))));
+    part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label, 'Skills'), risky ? 'risky' : '')));
+    part('modules').replaceChildren(...MODULES.map(([code, label, what]) => button(label, `${code} · ${what}`, () => press(code, label, 'Robot settings'))));
     part('tools').replaceChildren(...tools.map(tool => button(tool.label, tool.title, () => Promise.resolve(tool.onClick()).catch(fail))));
   }
   function renderControls() {
@@ -90,7 +97,7 @@ export function initConsole(root, {link, toast = message => console.warn(message
     if (!pendingJoints.size) return;
     const entries = [...pendingJoints]; pendingJoints.clear();
     if (!link.connected) return toast(offlineHint, true);
-    for (const command of packJointCommands(entries, BLE_TEXT)) await link.press(command).catch(fail);
+    for (const command of packJointCommands(entries, BLE_TEXT)) await link.press(command, 'Joint sliders').catch(fail);
     part('last').textContent = `Joints · ${entries.map(([i, a]) => `${i}:${a}°`).join(' ')}`;
   }
   function queueJoint(index, angle) {

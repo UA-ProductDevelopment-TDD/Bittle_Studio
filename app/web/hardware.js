@@ -2,6 +2,7 @@ import {catalog} from './bittle-link/catalog.js';
 import {createLink, packJointCommands} from './bittle-link/link.js';
 import {initConsole} from './bittle-link/console.js';
 import {saveFolderPack} from './bittle-link/pack.js';
+import {initSerialMonitor} from './bittle-link/serial-monitor.js';
 
 // Studio glue for the Bittle Link module: timeline playback, the function library and the developer-mode panel.
 // The connection, protocol and console live in web/bittle-link and also run standalone. In Studio every console
@@ -81,18 +82,18 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     toast(`Downloaded ${file}: ${names.join(' → ')} (gaits play one cycle). Run it without flags for a dry run.`);
   }
   async function deleteSaved(item) { await api(`/api/motions/${item.id}`, {}, 'DELETE'); await refreshMotions(); toast(`Deleted “${item.name}”.`); }
-  async function voiceAct(code, duration = 800) { if (link.developerMode) throw new Error('Voice actions are blocked by developer mode.'); const item = catalog.find(entry => entry.code === code); if (!item) throw new Error('Unknown Petoi function code.'); await link.sendCommand(item.code); if (item.walking) { await sleep(Math.max(200, Math.min(3000, duration))); await link.sendCommand('kbalance'); } return {status: link.status().testMode ? 'simulated' : 'sent', command: item.code}; }
+  async function voiceAct(code, duration = 800) { if (link.developerMode) throw new Error('Voice actions are blocked by developer mode.'); const item = catalog.find(entry => entry.code === code); if (!item) throw new Error('Unknown Petoi function code.'); await link.sendCommand(item.code, 'Voice'); if (item.walking) { await sleep(Math.max(200, Math.min(3000, duration))); await link.sendCommand('kbalance', 'Voice'); } return {status: link.status().testMode ? 'simulated' : 'sent', command: item.code}; }
   async function setDeveloperMode(enabled) { await link.setDeveloperMode(enabled); window.dispatchEvent(new CustomEvent('bittle-developer-mode', {detail: {enabled}})); }
 
   // Unified control: the console, library and sliders drive the simulator, and the robot too when connected.
   let sequenceEpoch = 0;
   const simulate = body => api('/api/skill', body).catch(error => { toast(error.message, true); return {simulated: false}; });
   const controlStatus = () => ({...link.status(), connected: true, robot: link.connected});
-  const both = command => Promise.all([simulate({command}), link.connected ? link.press(command) : null]);
+  const both = (command, origin = '') => Promise.all([simulate({command}), link.connected ? link.press(command, origin) : null]);
   const control = Object.assign(new EventTarget(), {
     status: controlStatus,
     cancelSequence() { sequenceEpoch++; },
-    async press(command) { sequenceEpoch++; await both(command); },
+    async press(command, origin = '') { sequenceEpoch++; await both(command, origin); },
     async stop() { sequenceEpoch++; await Promise.all([simulate({command: 'kbalance'}), link.connected ? link.stop() : null]); },
     async runSequence(item, {onStep} = {}) {
       const token = ++sequenceEpoch, live = () => token === sequenceEpoch;
@@ -102,8 +103,8 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
           for (const [index, step] of item.steps.entries()) {
             if (!live()) return;
             onStep?.(index);
-            if (step.kind === 'command') await both(step.command);
-            else await Promise.all([simulate({motion_id: step.motion_id}), link.connected ? resolveMotion(step.motion_id).then(entry => live() && link.sendSkill(entry, entry.name)) : null]);
+            if (step.kind === 'command') await both(step.command, `${item.name} · step ${index + 1}`);
+            else await Promise.all([simulate({motion_id: step.motion_id}), link.connected ? resolveMotion(step.motion_id).then(entry => live() && link.sendSkill(entry, entry.name, `${item.name} · step ${index + 1}`)) : null]);
             if (step.wait_ms) await wait(step.wait_ms);
           }
         } while (item.repeat && live());
@@ -134,7 +135,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     servoTimer = setTimeout(async () => {
       servoTimer = null;
       const batch = [...pendingServos]; pendingServos.clear();
-      for (const command of packJointCommands(batch)) await link.sendCommand(command).catch(error => toast(error.message, true));
+      for (const command of packJointCommands(batch)) await link.sendCommand(command, 'Joint sliders').catch(error => toast(error.message, true));
     }, 80);
   }
 
@@ -162,7 +163,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   $('hardwareDisconnect').onclick = () => link.disconnect().catch(error => toast(error.message, true));
   $('hardwarePlay').onclick = () => playTimelineSkill().catch(error => { link.markBusy(false); toast(error.message, true); });
   $('hardwareStop').onclick = () => link.stop().catch(error => toast(error.message, true));
-  $('hardwareTerminal').onsubmit = event => { event.preventDefault(); link.sendCommand($('hardwareCommand').value).catch(error => toast(error.message, true)); };
+  $('hardwareTerminal').onsubmit = event => { event.preventDefault(); link.sendCommand($('hardwareCommand').value, 'Terminal').catch(error => toast(error.message, true)); };
   $('developerMode').onchange = () => setDeveloperMode($('developerMode').checked).catch(error => { render(); toast(error.message, true); });
   $('functionSearch').oninput = renderLibrary;
   $('exportSequence').onclick = () => exportSequence().catch(error => toast(error.message, true));
@@ -170,6 +171,28 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   $('runSequence').onclick = () => runSelected().catch(error => toast(error.message, true));
   const stopIfBusy = () => { if (link.status().busy) link.stop().catch(error => toast(error.message, true)); };
   $('hardwareDialog').addEventListener('close', stopIfBusy); document.addEventListener('visibilitychange', () => { if (document.hidden) stopIfBusy(); }); window.addEventListener('pagehide', () => link.cleanup());
+
+  // Serial monitor: a floating window that opens when a robot connects (Window → Serial monitor reopens it).
+  initSerialMonitor($('serialMonitor'), {link});
+  const serialWindow = $('serialWindow');
+  const showSerial = visible => serialWindow.classList.toggle('hidden', !visible);
+  let wasConnected = false;
+  link.addEventListener('state', ({detail}) => {
+    $('serialStatus').textContent = detail.connected ? (detail.testMode ? 'test mode · nothing is sent' : `connected · ${detail.transport === 'ble' ? 'Bluetooth BLE' : 'serial'}`) : 'not connected';
+    if (detail.connected && !wasConnected) showSerial(true);
+    wasConnected = detail.connected;
+  });
+  $('closeSerial').onclick = () => showSerial(false);
+  const head = serialWindow.querySelector('.serial-head');
+  head.addEventListener('pointerdown', event => {
+    if (event.target.closest('button')) return;
+    const box = serialWindow.getBoundingClientRect(), dx = event.clientX - box.left, dy = event.clientY - box.top;
+    head.setPointerCapture(event.pointerId);
+    const move = e => { serialWindow.style.left = `${Math.max(0, Math.min(innerWidth - 120, e.clientX - dx))}px`; serialWindow.style.top = `${Math.max(0, Math.min(innerHeight - 40, e.clientY - dy))}px`; serialWindow.style.right = serialWindow.style.bottom = 'auto'; };
+    const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); };
+    head.addEventListener('pointermove', move); head.addEventListener('pointerup', up);
+  });
+  window.addEventListener('bittle-toggle-serial', () => showSerial(serialWindow.classList.contains('hidden')));
 
   const publicApi = {status: link.status, sendCommand: link.sendCommand, cancel: control.stop, voiceAct, disconnect: link.disconnect, refreshMotions, mirrorServos, link};
   window.bittleHardware = publicApi; render(); renderLibrary(); refreshMotions().catch(error => toast(error.message, true)); return publicApi;

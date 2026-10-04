@@ -1,6 +1,7 @@
 import {createLink} from './link.js';
 import {initConsole} from './console.js';
 import {createLocalStore, downloadJson, listFolderPacks, loadFolderPack, pickJson, saveFolderPack} from './pack.js';
+import {initSerialMonitor} from './serial-monitor.js';
 
 // Standalone Bittle Link: the robot console without the simulator. Buttons and imported skills live in this browser;
 // packs are shared through the repository's saved-motions/ folder.
@@ -11,13 +12,9 @@ function toast(message, error = false) { $('toast').textContent = message; $('to
 const link = createLink();
 const local = createLocalStore();
 
-link.addEventListener('log', ({detail}) => {
-  const time = new Date().toLocaleTimeString([], {hour12: false});
-  $('log').textContent = (`${time}  ${detail.kind.padEnd(5)}  ${detail.message}\n` + $('log').textContent).slice(0, 14000);
-});
 link.addEventListener('state', ({detail}) => {
   $('connect').disabled = detail.connected; $('disconnect').disabled = !detail.connected;
-  $('transport').disabled = detail.connected; $('send').disabled = !detail.connected;
+  $('transport').disabled = detail.connected;
   $('developerMode').checked = detail.developerMode;
 });
 
@@ -60,6 +57,6 @@ document.querySelectorAll('[data-close]').forEach(button => button.onclick = () 
 $('connect').onclick = () => link.connect($('transport').value).catch(error => toast(error.message, true));
 $('disconnect').onclick = () => link.disconnect().catch(error => toast(error.message, true));
 $('developerMode').onchange = () => link.setDeveloperMode($('developerMode').checked).catch(error => toast(error.message, true));
-$('terminal').onsubmit = event => { event.preventDefault(); link.sendCommand($('command').value).catch(error => toast(error.message, true)); };
+initSerialMonitor($('serialMonitor'), {link});
 document.addEventListener('visibilitychange', () => { if (document.hidden && link.status().busy) link.stop().catch(() => {}); });
 window.addEventListener('pagehide', () => link.cleanup());

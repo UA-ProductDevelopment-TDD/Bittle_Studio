@@ -6,6 +6,7 @@
 <title>Bittle Link</title>
 <link rel="stylesheet" href="./base.css">
 <link rel="stylesheet" href="./console.css">
+<link rel="stylesheet" href="./serial-monitor.css">
 </head>
 <body>
 <header>
@@ -20,9 +21,8 @@
 <main>
   <section class="panel"><div id="console"></div></section>
   <section class="panel">
-    <details open><summary>Terminal &amp; log</summary>
-      <form id="terminal" class="terminal"><input id="command" maxlength="64" placeholder="Any Petoi command, for example ksit or m 0 30" aria-label="Petoi command"><button id="send" disabled>Send</button></form>
-      <pre id="log" class="log" aria-live="polite"></pre>
+    <details open><summary>Serial monitor</summary>
+      <div id="serialMonitor" class="serial-standalone"></div>
     </details>
   </section>
 </main>

@@ -1,7 +1,8 @@
 // Bittle Link: transport and OpenCat protocol for a Petoi Bittle, with no DOM or Studio dependencies.
 // Transports: 'ble' (Nordic UART over Web Bluetooth), 'serial' (Web Serial, 115200 baud) and 'test' (logs only).
 // Events: 'log' {kind, message}, 'state' {connected, transport, testMode, busy, developerMode, message}, 'rx' {text} (raw replies),
-// 'joints' {angles: [16 servo angles]} whenever the robot reports its joint list (the j command).
+// 'joints' {angles: [16 servo angles]} whenever the robot reports its joint list (the j command),
+// 'tx' {text, origin, binary, size} for every write that reached the robot (origin = the control that sent it).
 // Console macros handled by press(): 'fp' read real positions once, 'fP' keep reading, '#on' switch the servos back on.
 
 const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -76,15 +77,15 @@ export function createLink() {
       characteristic = await service.getCharacteristic(RX); notifications = await service.getCharacteristic(TX); notifications.addEventListener('characteristicvaluechanged', received); await notifications.startNotifications(); connected = true; log('INFO', `BLE connected: ${device.name || 'Bittle'}`);
     } else throw new Error(`Unknown transport “${transport}”.`);
     setState(mode === 'test' ? 'Test mode · nothing is sent to hardware' : `Connected · ${mode}`);
-    if (developerMode) await sendCommand('gb');
+    if (developerMode) await sendCommand('gb', 'Developer mode (on connect)');
   }
   async function disconnect() { epoch++; busy = false; uploadedSignature = ''; closing = true; try { await cleanup(); } finally { closing = false; connected = false; log('INFO', 'Disconnected'); setState('Not connected'); } }
 
   // Raw writes are queued so commands, poses and skill uploads never interleave.
-  function writeBytes(bytes, description) {
+  function writeBytes(bytes, description, origin = '', binary = false) {
     const task = writeQueue.then(async () => {
       guard();
-      if (mode === 'test') { log('TEST', description); testReply(bytes); return; }
+      if (mode === 'test') { log('TEST', description); emit('tx', {text: description, origin, binary, size: bytes.length}); testReply(bytes); return; }
       if (characteristic) {
         for (let offset = 0; offset < bytes.length; offset += BLE_PACKET) {
           const chunk = bytes.slice(offset, offset + BLE_PACKET);
@@ -93,6 +94,7 @@ export function createLink() {
         }
       } else await writer.write(bytes);
       log('TX', description);
+      emit('tx', {text: description, origin, binary, size: bytes.length});
     });
     writeQueue = task.catch(() => {}); return task;
   }
@@ -104,33 +106,33 @@ export function createLink() {
     if (joints) { const v = joints[1].split(/\s+/).map(Number); for (let i = 0; i + 1 < v.length; i += 2) if (v[i] >= 0 && v[i] < 16) testAngles[v[i]] = v[i + 1]; }
     if (text === 'j') setTimeout(() => receivedText(`=\r\n${[...Array(16).keys()].join('\t')}\t\r\n${testAngles.join(',\t')},\t\r\n`), 30);
   }
-  function sendCommand(command) {
+  function sendCommand(command, origin = '') {
     const value = String(command).trim();
     if (!value || value.length > 64 || /[^\x20-\x7e]/.test(value)) throw new Error('Enter a printable Petoi command up to 64 characters.');
     const bytes = new TextEncoder().encode(value + '\n');
     if (characteristic && bytes.length > BLE_PACKET) throw new Error('BLE text commands may contain at most 19 characters.');
-    return writeBytes(bytes, value);
+    return writeBytes(bytes, value, origin);
   }
-  function sendPose(values) {
+  function sendPose(values, origin = '') {
     if (!Array.isArray(values) || !values.length || values.length % 2) throw new Error('Invalid servo pose.');
     const packet = new Uint8Array(values.length + 2); packet[0] = 'I'.charCodeAt(0);
     values.forEach((value, index) => { if (!Number.isInteger(value) || value < -128 || value > 127) throw new Error('Servo values must fit signed bytes.'); packet[index + 1] = value & 255; });
     packet[packet.length - 1] = '~'.charCodeAt(0);
     if (characteristic && packet.length > BLE_PACKET) throw new Error('A BLE pose packet may contain at most 9 joints.');
-    return writeBytes(packet, `I · ${values.length / 2} joints`);
+    return writeBytes(packet, `I · ${values.length / 2} joints`, origin, true);
   }
-  function uploadSkill(values, description) {
+  function uploadSkill(values, description, origin = description) {
     const packet = new Uint8Array(values.length + 2); packet[0] = 'K'.charCodeAt(0);
     values.forEach((value, index) => packet[index + 1] = value & 255); packet[packet.length - 1] = '~'.charCodeAt(0);
-    return writeBytes(packet, `${description} · K upload · ${packet.length} bytes`);
+    return writeBytes(packet, `K upload · ${description} · ${packet.length} bytes`, origin, true);
   }
 
   // Firmware skills: {skill: int[], signature, type}. The last uploaded skill lives in the firmware's T slot,
   // so an unchanged skill is recalled with a single 'T' instead of a full upload.
-  async function sendSkill({skill, signature}, name = 'Custom skill') {
+  async function sendSkill({skill, signature}, name = 'Custom skill', origin = name) {
     guard();
-    if (signature && uploadedSignature === signature) { await sendCommand('T'); log('INFO', `${name} recalled instantly with T`); }
-    else { await uploadSkill(skill, name); uploadedSignature = signature || ''; log('INFO', `${name} stored as the firmware's T skill`); }
+    if (signature && uploadedSignature === signature) { await sendCommand('T', origin); log('INFO', `${name} recalled instantly with T`); }
+    else { await uploadSkill(skill, name, origin); uploadedSignature = signature || ''; log('INFO', `${name} stored as the firmware's T skill`); }
   }
   async function runSkill(entry, name) {
     busy = true; setState(`Starting ${name}…`);
@@ -143,33 +145,33 @@ export function createLink() {
   // Servo feedback is printed to USB only, but it also updates the joint list that j reports on every port.
   // Plain f (not fp) marks a measurement as running, so the firmware re-attaches the servos (which reading detaches)
   // on the next command: here the j that reports the result (OpenCatEsp32 reaction.h / espServo.h).
-  async function readPositions(token) { await sendCommand('f'); await wait(350, token); await sendCommand('j'); }
+  async function readPositions(token, origin = 'Read positions') { await sendCommand('f', origin); await wait(350, token); await sendCommand('j', origin); }
   async function livePositions(token) {
-    try { while (token === epoch && connected) { await readPositions(token); await wait(250, token); } }
+    try { while (token === epoch && connected) { await readPositions(token, 'Live positions'); await wait(250, token); } }
     catch (error) { if (error.message !== STOPPED) log('ERROR', error.message); }
   }
-  async function motorsOn() {
+  async function motorsOn(origin = 'Motors on') {
     // The firmware has no 'servos on' command: ':' restores full servo stiffness (reading leaves them soft), and
     // commanding the last read positions powers them on where the legs are.
-    await sendCommand(':');
-    if (!lastJoints) { log('INFO', 'No positions read yet: motors on via kbalance'); return sendCommand('kbalance'); }
+    await sendCommand(':', origin);
+    if (!lastJoints) { log('INFO', 'No positions read yet: motors on via kbalance'); return sendCommand('kbalance', origin); }
     const pairs = [0, 8, 9, 10, 11, 12, 13, 14, 15].map(servo => [servo, lastJoints[servo]]);
-    for (const command of packJointCommands(pairs)) await sendCommand(command);
+    for (const command of packJointCommands(pairs)) await sendCommand(command, origin);
     log('INFO', 'Motors on, holding the last read positions');
   }
-  async function press(command) {
+  async function press(command, origin = '') {
     guard(); epoch++; busy = false;
     const token = epoch;
-    if (command === 'fp') { await readPositions(token).catch(error => { if (error.message !== STOPPED) throw error; }); setState(); return; }
+    if (command === 'fp') { await readPositions(token, origin || 'Read positions').catch(error => { if (error.message !== STOPPED) throw error; }); setState(); return; }
     if (command === 'fP') { livePositions(token); setState('Reading positions live · press any command to stop'); return; }
-    if (command === '#on') { await motorsOn(); setState(); return; }
-    await sendCommand(command);
+    if (command === '#on') { await motorsOn(origin || 'Motors on'); setState(); return; }
+    await sendCommand(command, origin);
     // gb/gB are developer mode's own commands, so keep its state truthful when they are sent directly.
     if (command === 'gb' || command === 'gB') { developerMode = command === 'gb'; log('INFO', developerMode ? 'Gyro off · developer mode on' : 'Gyro on · developer mode off'); }
     setState();
   }
-  async function stop() { epoch++; const active = busy; busy = false; setState('Stopping…'); if (connected) await sendCommand('kbalance'); setState(connected ? 'Connected · motion stopped' : 'Not connected'); if (active) log('INFO', 'Motion stopped; balance pose requested'); }
-  async function setDeveloperMode(enabled) { if (busy) await stop(); developerMode = !!enabled; if (connected) await sendCommand(enabled ? 'gb' : 'gB'); log('INFO', enabled ? 'Developer mode enabled' : 'Developer mode disabled'); setState(); }
+  async function stop() { epoch++; const active = busy; busy = false; setState('Stopping…'); if (connected) await sendCommand('kbalance', 'Stop'); setState(connected ? 'Connected · motion stopped' : 'Not connected'); if (active) log('INFO', 'Motion stopped; balance pose requested'); }
+  async function setDeveloperMode(enabled) { if (busy) await stop(); developerMode = !!enabled; if (connected) await sendCommand(enabled ? 'gb' : 'gB', 'Developer mode'); log('INFO', enabled ? 'Developer mode enabled' : 'Developer mode disabled'); setState(); }
 
   // Streams timestamped servo poses [[seconds, values], ...] with I packets; gaits loop until stopped.
   async function playSamples(samples, motionType, hz) {
@@ -197,7 +199,7 @@ export function createLink() {
         for (const [index, step] of item.steps.entries()) {
           if (token !== epoch || !connected) throw new Error(STOPPED);
           onStep?.(index);
-          if (step.kind === 'command') await sendCommand(step.command);
+          if (step.kind === 'command') await sendCommand(step.command, `${item.name} · step ${index + 1}`);
           else {
             if (!resolveMotion) throw new Error('This console cannot run Studio functions.');
             const entry = await resolveMotion(step.motion_id);

@@ -39,3 +39,5 @@ dialog::backdrop { background: #060c13c9; }
 #toast.show { transform: translateX(-50%); opacity: 1; }
 #toast.error { background: #ffc6bc; color: #4a2118; }
 @media (max-width: 600px) { header { padding: 12px 16px; } .connection { width: 100%; } .connection select { flex: 1; } }
+
+.serial-standalone { height: 320px; }
