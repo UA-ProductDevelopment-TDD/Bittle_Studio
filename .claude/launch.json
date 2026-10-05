@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bittle-link",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["app/bittle_link.py", "--no-browser"],
+      "port": 8770
+    },
+    {
+      "name": "bittle-studio-test",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "server:app", "--app-dir", "app", "--host", "127.0.0.1", "--port", "8766"],
+      "port": 8766
+    },
+    {
+      "name": "pages-preview",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-c", "import functools,http.server,os,shutil;os.makedirs('_pages/Bittle_Studio',exist_ok=True);shutil.rmtree('_pages/Bittle_Studio');shutil.copytree('_site','_pages/Bittle_Studio');http.server.SimpleHTTPRequestHandler.extensions_map['.js']='text/javascript';http.server.ThreadingHTTPServer(('127.0.0.1',8790),functools.partial(http.server.SimpleHTTPRequestHandler,directory='_pages')).serve_forever()"],
+      "port": 8790
+    }
+  ]
+}
