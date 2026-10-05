@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Starts only the Bittle Link robot console (no simulator). Needs just Python.
+cd "$(dirname "$0")/../.." || exit 1
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python app/bittle_link.py "$@"
+else
+  PY=""
+  for candidate in python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+  done
+  if [ -z "$PY" ]; then
+    echo "Python 3.11 or 3.12 is needed. Get it from https://www.python.org/downloads/ (or your package manager)."
+    exit 1
+  fi
+  "$PY" app/bittle_link.py "$@"
+fi

@@ -12,6 +12,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function initHardware({api, toast, getModel, getMapping, refresh}) {
   const $ = id => document.getElementById(id);
   const link = createLink();
+  // Learning aid: with no robot connected, actions still go through a second link in test mode, so the serial monitor
+  // shows the exact commands a real Bittle would receive (marked as simulator only; nothing leaves the computer).
+  const shadow = createLink();
+  let shadowReady = false;
+  const robot = () => link.connected ? link : shadowReady ? shadow : null;
   let motions = [], sequence = [];  // sequence: function ids ticked for a combined export, in click order
 
   link.addEventListener('state', render);
@@ -40,7 +45,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   }
   async function refreshMotions() { motions = (await api('/api/motions')).motions; sequence = sequence.filter(id => motions.some(m => m.id === id)); renderLibrary(); consolePanel.refreshLibrary(); }
   async function loadSaved(item) { await api(`/api/motions/${item.id}/load`, {}); await refresh?.(); toast(`Loaded “${item.name}” into the timeline.`); }
-  async function playSaved(item) { control.cancelSequence(); await Promise.all([simulate({motion_id: item.id}), link.connected ? resolveMotion(item.id).then(entry => link.runSkill(entry, item.name)) : null]); }
+  async function playSaved(item) { control.cancelSequence(); await Promise.all([simulate({motion_id: item.id}), robot() ? resolveMotion(item.id).then(entry => robot()?.runSkill(entry, item.name)) : null]); }
   async function exportSaved(item) {
     // The function's own type, Hz, speed and order are used; the timeline is left untouched.
     const file = `bittle_${safeName(item.name)}.py`;
@@ -50,7 +55,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   async function downloadPython(url, body, file) {
     let response;
     try { response = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); }
-    catch { throw new Error('The Bittle Studio server is not running. Start launch-studio.cmd (keep its window open), then reload this page.'); }
+    catch { throw new Error('The Bittle Studio server is not running. Start it with the “Start Bittle Studio” launcher in the launchers folder (keep its window open), then reload this page.'); }
     if (!response.ok) { let detail = response.statusText; try { detail = (await response.json()).detail; } catch {} throw new Error(typeof detail === 'string' ? detail : 'Export failed'); }
     const href = URL.createObjectURL(new Blob([await response.text()], {type: 'text/x-python'}));
     Object.assign(document.createElement('a'), {href, download: file}).click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
@@ -82,12 +87,12 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   let sequenceEpoch = 0;
   const simulate = body => api('/api/skill', body).catch(error => { toast(error.message, true); return {simulated: false}; });
   const controlStatus = () => ({...link.status(), connected: true, robot: link.connected});
-  const both = (command, origin = '') => Promise.all([simulate({command}), link.connected ? link.press(command, origin) : null]);
+  const both = (command, origin = '') => Promise.all([simulate({command}), robot()?.press(command, origin)]);
   const control = Object.assign(new EventTarget(), {
     status: controlStatus,
     cancelSequence() { sequenceEpoch++; },
     async press(command, origin = '') { sequenceEpoch++; await both(command, origin); },
-    async stop() { sequenceEpoch++; await Promise.all([simulate({command: 'kbalance'}), link.connected ? link.stop() : null]); },
+    async stop() { sequenceEpoch++; await Promise.all([simulate({command: 'kbalance'}), robot()?.stop()]); },
     async runSequence(item, {onStep} = {}) {
       const token = ++sequenceEpoch, live = () => token === sequenceEpoch;
       const wait = ms => new Promise(resolve => { const end = performance.now() + ms; const tick = () => !live() || performance.now() >= end ? resolve() : setTimeout(tick, Math.min(20, ms)); tick(); });
@@ -96,8 +101,8 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
           for (const [index, step] of item.steps.entries()) {
             if (!live()) return;
             onStep?.(index);
-            if (step.kind === 'command') { link.cancelStream(); await both(step.command, `${item.name} · step ${index + 1}`); }
-            else await Promise.all([simulate({motion_id: step.motion_id}), link.connected ? resolveMotion(step.motion_id).then(entry => live() && link.sendSkill(entry, entry.name, `${item.name} · step ${index + 1}`)) : null]);
+            if (step.kind === 'command') { robot()?.cancelStream(); await both(step.command, `${item.name} · step ${index + 1}`); }
+            else await Promise.all([simulate({motion_id: step.motion_id}), robot() ? resolveMotion(step.motion_id).then(entry => live() && robot()?.sendSkill(entry, entry.name, `${item.name} · step ${index + 1}`)) : null]);
             if (step.wait_ms) await wait(step.wait_ms);
           }
         } while (item.repeat && live());
@@ -105,7 +110,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     },
   });
   Object.defineProperties(control, {connected: {get: () => true}, developerMode: {get: () => link.developerMode},
-    playbackMode: {get: () => link.playbackMode, set: mode => { link.playbackMode = mode; }}});
+    playbackMode: {get: () => link.playbackMode, set: mode => { link.playbackMode = mode; shadow.playbackMode = mode; }}});
   link.addEventListener('state', () => control.dispatchEvent(new CustomEvent('state', {detail: controlStatus()})));
 
   // Real joint positions reported by the robot (Read / Live positions) pose the simulated Bittle through Servo setup.
@@ -123,13 +128,13 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   // Joint sliders in the inspector mirror to the robot's servos when connected (rate-limited, packed per BLE packet).
   const pendingServos = new Map(); let servoTimer = null;
   function mirrorServos(entries) {
-    if (!link.connected) return;
+    if (!robot()) return;
     entries.forEach(([servo, angle]) => pendingServos.set(servo, angle));
     if (servoTimer) return;
     servoTimer = setTimeout(async () => {
       servoTimer = null;
       const batch = [...pendingServos]; pendingServos.clear();
-      for (const command of packJointCommands(batch)) await link.sendCommand(command, 'Joint sliders').catch(error => toast(error.message, true));
+      for (const command of packJointCommands(batch)) await robot()?.sendCommand(command, 'Joint sliders').catch(error => toast(error.message, true));
     }, 80);
   }
 
@@ -163,15 +168,17 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   $('hardwareDialog').addEventListener('close', stopIfBusy); document.addEventListener('visibilitychange', () => { if (document.hidden) stopIfBusy(); }); window.addEventListener('pagehide', () => link.cleanup());
 
   // Serial monitor: a floating window that opens when a robot connects (Window → Serial monitor reopens it).
-  initSerialMonitor($('serialMonitor'), {link});
+  const monitor = initSerialMonitor($('serialMonitor'), {link, offlineSend: command => control.press(command, 'Serial monitor')});
+  shadow.connect('test').then(() => { shadowReady = true; monitor.attachPreview(shadow); }).catch(() => {});
   const serialWindow = $('serialWindow');
   const showSerial = visible => serialWindow.classList.toggle('hidden', !visible);
   let wasConnected = false;
   link.addEventListener('state', ({detail}) => {
-    $('serialStatus').textContent = detail.connected ? (detail.testMode ? 'test mode · nothing is sent' : `connected · ${detail.transport === 'ble' ? 'Bluetooth BLE' : 'serial'}`) : 'not connected';
+    $('serialStatus').textContent = detail.connected ? (detail.testMode ? 'test mode · nothing is sent' : `connected · ${detail.transport === 'ble' ? 'Bluetooth BLE' : 'serial'}`) : 'simulator only · commands shown, not sent';
     if (detail.connected && !wasConnected) showSerial(true);
     wasConnected = detail.connected;
   });
+  $('serialStatus').textContent = 'simulator only · commands shown, not sent';
   $('closeSerial').onclick = () => showSerial(false);
   $('openSerial').onclick = () => showSerial(serialWindow.classList.contains('hidden'));
   const head = serialWindow.querySelector('.serial-head');

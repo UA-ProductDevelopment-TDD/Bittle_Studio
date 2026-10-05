@@ -18,12 +18,14 @@ PACK = {'format': 'bittle-link-pack', 'version': 1, 'controls': [BUTTON], 'skill
 class LayoutTest(unittest.TestCase):
     def test_folders(self):
         root = engine.PROJECT
-        for name in ('app', 'robot-models', 'saved-motions', 'docs', 'scripts', 'README.md', 'setup.cmd', 'launch-studio.cmd', 'launch-bittle-link.cmd'):
+        for name in ('app', 'robot-models', 'saved-motions', 'docs', 'dev-tools', 'README.md', 'launchers/windows/Setup.cmd', 'launchers/mac/Setup.command', 'launchers/linux/setup.sh',
+                     'launchers/windows/Start Bittle Studio.cmd', 'launchers/mac/Start Bittle Studio.command', 'launchers/linux/start-studio.sh',
+                     'launchers/windows/Start Bittle Link.cmd', 'launchers/mac/Start Bittle Link.command', 'launchers/linux/start-bittle-link.sh'):
             self.assertTrue((root / name).exists(), name)
         self.assertEqual(engine.ROOT, root / 'app')
         self.assertEqual(engine.DATA, root / 'user-data')
         self.assertTrue((engine.ASSETS / 'bittle' / 'bittle.urdf').is_file())
-        self.assertTrue((engine.ROOT / 'node_modules' / 'three').is_dir(), 'run setup.cmd')
+        self.assertTrue((engine.ROOT / 'node_modules' / 'three').is_dir(), 'run the Setup launcher')
 
     def test_fixed_urls_map_to_new_folders(self):
         self.assertEqual(engine.url_path('/assets/bittle'), engine.ASSETS / 'bittle')

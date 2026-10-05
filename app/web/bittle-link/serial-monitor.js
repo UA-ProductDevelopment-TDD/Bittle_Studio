@@ -65,7 +65,9 @@ function explainReply(text) {
   return '';
 }
 
-export function initSerialMonitor(root, {link, sendOrigin = 'Serial monitor'}) {
+// preview links (attachPreview) are simulator-only test-mode links: their rows show what a robot would receive.
+// offlineSend(command) handles typed commands while no robot is connected (Studio: play them in the simulator).
+export function initSerialMonitor(root, {link, sendOrigin = 'Serial monitor', offlineSend = null}) {
   root.classList.add('serial-monitor');
   root.innerHTML = `
 <div class="sm-toolbar"><select data-sm="filter" aria-label="Show"><option value="all">All</option><option value="tx">Sent</option><option value="rx">Received</option></select>
@@ -86,20 +88,21 @@ export function initSerialMonitor(root, {link, sendOrigin = 'Serial monitor'}) {
     if (part('scroll').checked) list.scrollTop = list.scrollHeight;
   }
   const visible = row => part('filter').value === 'all' || row.classList.contains(`sm-${part('filter').value}`);
-  function row(kind, text, origin, meaning) {
-    const element = document.createElement('div'); element.className = `sm-row sm-${kind}`;
+  function row(kind, text, origin, meaning, preview = false) {
+    const element = document.createElement('div'); element.className = `sm-row sm-${kind}${preview ? ' sm-preview' : ''}`;
     const time = Object.assign(document.createElement('time'), {textContent: stamp()});
     const arrow = Object.assign(document.createElement('span'), {className: 'sm-arrow', textContent: kind === 'tx' ? '→' : '←'});
     const code = Object.assign(document.createElement('code'), {textContent: text});
     element.append(time, arrow, code);
     if (origin) element.append(Object.assign(document.createElement('span'), {className: 'sm-origin', textContent: origin}));
+    if (preview) element.append(Object.assign(document.createElement('span'), {className: 'sm-badge', textContent: kind === 'tx' ? 'simulator only · not sent' : 'simulated reply'}));
     if (meaning) element.append(Object.assign(document.createElement('div'), {className: 'sm-meaning', textContent: meaning}));
     return element;
   }
-  function flushRx(force) {
+  function flushRx(force, preview = false) {
     const lines = rxBuffer.split(/\r?\n/);
     rxBuffer = force ? '' : lines.pop();
-    for (const line of lines.map(l => l.replace(/\s+$/, '')).filter(Boolean)) add(row('rx', line.replace(/,?\t/g, m => m === ',\t' ? ', ' : '  '), '', explainReply(line)));
+    for (const line of lines.map(l => l.replace(/\s+$/, '')).filter(Boolean)) add(row('rx', line.replace(/,?\t/g, m => m === ',\t' ? ', ' : '  '), '', explainReply(line), preview));
   }
 
   link.addEventListener('tx', ({detail}) => add(row('tx', detail.text, detail.origin || 'Command', explainCommand(detail.text))));
@@ -127,7 +130,12 @@ export function initSerialMonitor(root, {link, sendOrigin = 'Serial monitor'}) {
     event.preventDefault();
     const input = part('command'), value = input.value.trim();
     if (!value) return;
-    if (!link.connected) { add(row('tx', value, sendOrigin, 'not sent: connect a robot first')); return; }
+    if (!link.connected) {
+      if (offlineSend) Promise.resolve(offlineSend(value)).catch(error => add(row('rx', error.message, '', 'not sent')));
+      else add(row('tx', value, sendOrigin, 'not sent: connect a robot first'));
+      history = [value, ...history.filter(item => item !== value)].slice(0, 30); historyIndex = -1; part('command').value = '';
+      return;
+    }
     Promise.resolve(link.sendCommand(value, sendOrigin)).catch(error => add(row('rx', error.message, '', 'not sent')));
     history = [value, ...history.filter(item => item !== value)].slice(0, 30); historyIndex = -1; input.value = '';
   };
@@ -137,5 +145,15 @@ export function initSerialMonitor(root, {link, sendOrigin = 'Serial monitor'}) {
     historyIndex = Math.max(-1, Math.min(history.length - 1, historyIndex + (event.key === 'ArrowUp' ? 1 : -1)));
     part('command').value = historyIndex < 0 ? '' : history[historyIndex];
   };
-  return {clear: () => list.replaceChildren()};
+  function attachPreview(source) {
+    let buffer = '', timer = null;
+    source.addEventListener('tx', ({detail}) => add(row('tx', detail.text, detail.origin || 'Command', explainCommand(detail.text), true)));
+    source.addEventListener('rx', ({detail}) => {
+      // Keep simulated replies apart from the real robot's buffer.
+      const own = rxBuffer; rxBuffer = buffer + detail.text; flushRx(false, true); buffer = rxBuffer; rxBuffer = own;
+      clearTimeout(timer); timer = setTimeout(() => { const keep = rxBuffer; rxBuffer = buffer; flushRx(true, true); buffer = ''; rxBuffer = keep; }, 250);
+    });
+    list.querySelector('.sm-empty')?.replaceChildren('No robot connected: the commands your actions would send appear here, marked “simulator only”. Typed commands play in the simulator.');
+  }
+  return {clear: () => list.replaceChildren(), attachPreview};
 }

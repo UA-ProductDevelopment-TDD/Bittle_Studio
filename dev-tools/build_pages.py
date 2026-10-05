@@ -4,7 +4,7 @@ Bittle Link is plain static files, and GitHub Pages is served over HTTPS, so Web
 The packs in saved-motions/ are copied read-only (saving a pack needs the local launcher).
 The Studio itself needs its Python simulator, so the landing page points to the download instead.
 
-    python scripts/build_pages.py [--repo-url https://github.com/owner/repo]
+    python dev-tools/build_pages.py [--repo-url https://github.com/owner/repo]
 """
 import argparse
 import html
@@ -48,7 +48,7 @@ code {{ background: var(--line); padding: 1px 5px; border-radius: 4px; }}
 <p class="lead">Design, simulate and send motions to a Petoi Bittle robot dog.</p>
 <div class="cards">
   <section class="card"><h2>Bittle Link</h2><p>The robot console in your browser: connect over Bluetooth, drive gaits, play Petoi skills and your own saved functions, with a serial monitor. Nothing to install.</p><a class="button" href="bittle-link/">Open Bittle Link</a></section>
-  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download the ZIP, unzip it, run <code>setup.cmd</code> once, then <code>launch-studio.cmd</code>.</p><div class="actions"><a class="button" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
+  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download the ZIP, unzip it, open <code>launchers</code> and the folder for your system (Windows, Mac or Linux), run <b>Setup</b> once, then <b>Start Bittle Studio</b>.</p><div class="actions"><a class="button" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
   <section class="card"><h2>User guide</h2><p>How to set up servos, build motions, compose buttons and control the robot.</p><a class="button secondary" href="{repo}/blob/master/docs/user-guide.md">Read the guide</a></section>
 </div>
 <p class="note">Bluetooth from a web page needs Chrome or Edge on desktop or Android. Packs from the repository's <code>saved-motions/</code> folder can be loaded here; to save packs to that folder, use the local launcher.</p>

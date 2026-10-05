@@ -2,7 +2,7 @@
 rem Runs the automated checks: Python tests for the simulator and API, and a syntax check of every web file.
 cd /d "%~dp0.."
 if not exist ".venv\Scripts\python.exe" (
-  echo Run setup.cmd first.
+  echo Run launchers\windows\Setup.cmd first.
   pause
   exit /b 1
 )

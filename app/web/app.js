@@ -19,7 +19,7 @@ function toast(message, error = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').className = '', error ? 11000 : 5000);
 }
 // A network failure means the local server is gone (window closed or stopped), not a bad request.
-const SERVER_OFFLINE = 'The Bittle Studio server is not running. Start launch-studio.cmd (keep its window open), then reload this page.';
+const SERVER_OFFLINE = 'The Bittle Studio server is not running. Start it with the “Start Bittle Studio” launcher in the launchers folder (keep its window open), then reload this page.';
 async function api(url, data, method = 'POST') {
   let response;
   try { response = await fetch(url, data === undefined ? {} : {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}); }

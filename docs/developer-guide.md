@@ -12,10 +12,11 @@ How Bittle Studio is organised, and how to change it safely. For using the app, 
 | `app/tests/` | Automated tests (`unittest`). | yes |
 | `robot-models/` | Bundled robot models (URDF + meshes). Served as `/assets/...`. | yes |
 | `saved-motions/` | Bittle Link packs (`*.json`). Served as `/saved-motions/...` by both servers. | yes |
-| `scripts/` | Helper `.cmd` files for tests and updates. | yes |
+| `launchers/` | Double-click launchers per system: `windows/` (`.cmd`), `mac/` (`.command`), `linux/` (`.sh`). They stay thin and call `app/install.py`, `app/launcher.py` or `app/bittle_link.py`. | yes |
+| `dev-tools/` | For developers: `run-tests.cmd` / `run-tests.sh` and `build_pages.py` (the GitHub Pages site). | yes |
 | `docs/` | User and developer documentation. | yes |
 | `user-data/` | Runtime data: imported meshes and robots, `studio-session.json` autosave, Python run folders. Served as `/data/...`. Created automatically, and an older `data/` folder is renamed to it on first start. | no |
-| `.venv/`, `app/node_modules/` | Installed Python and npm packages, created by `setup.cmd`. | no |
+| `.venv/`, `app/node_modules/` | Installed Python and npm packages, created by the Setup launchers (`app/install.py`). | no |
 
 The URL prefixes `/assets` and `/data` are stored inside saved projects, so they stay fixed even if the folders move on disk. `app/engine.py` defines the mapping in `URL_ROOTS`, and `url_path()` converts such a URL back to a disk path.
 
@@ -26,6 +27,7 @@ The URL prefixes `/assets` and `/data` are stored inside saved projects, so they
 - `motion_export.py`: timeline sampling, `PetoiRobot` script export and firmware skill (`K`) compilation.
 - `scripting.py`, `script_worker.py`: the Python code panel runner (one child process per target).
 - `packs.py`: Bittle Link pack validation, listing and saving. It uses the **standard library only**, so the lightweight console server can use it too.
+- `install.py`: stdlib-only installer used by every Setup/Update launcher: creates `.venv`, installs `requirements.txt`, and downloads three.js from the npm registry, checked against `package-lock.json` (so Node.js is not needed).
 - `bittle_link.py`: stdlib-only server for the standalone console (port 8770).
 - `voice_tools.py`: tool definitions for the optional voice companion.
 
@@ -48,7 +50,7 @@ A pack is `{format: 'bittle-link-pack', version: 1, name, controls: [...], skill
 
 ## Testing changes
 
-Double-click `scripts/run-tests.cmd`, or run:
+Double-click `dev-tools/run-tests.cmd` (Windows) or run `dev-tools/run-tests.sh` (Mac/Linux), or run:
 
 ```bash
 .venv/Scripts/python.exe -m unittest discover -s app/tests -t app -v

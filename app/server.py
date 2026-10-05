@@ -1,4 +1,4 @@
-"""Bittle Studio: local HTTP interface. Run with launch-studio.cmd (app/launcher.py)."""
+"""Bittle Studio: local HTTP interface. Started by the "Start Bittle Studio" launchers (app/launcher.py)."""
 import io
 import json
 import math
