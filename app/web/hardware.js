@@ -26,7 +26,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
     window.dispatchEvent(new CustomEvent('bittle-hardware-state', {detail: link.status()}));
   }
 
-  const skillEntry = (result, name) => ({skill: result.skill, signature: result.metadata.signature, type: result.metadata.type, name});
+  const skillEntry = (result, name) => ({skill: result.skill, signature: result.metadata.signature, type: result.metadata.type, hz: result.metadata.firmware_hz, name});
   async function resolveMotion(id) { const result = await api(`/api/motions/${id}/skill`, {mapping: getMapping()}); return skillEntry(result, motions.find(item => item.id === id)?.name || 'Studio function'); }
 
   function functionRow(title, detail, actions) { const row = document.createElement('div'); row.className = 'function-row'; const copy = document.createElement('div'); const b = document.createElement('b'), small = document.createElement('small'); b.textContent = title; small.textContent = detail; copy.append(b, small); row.append(copy, actions); return row; }
@@ -96,7 +96,7 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
           for (const [index, step] of item.steps.entries()) {
             if (!live()) return;
             onStep?.(index);
-            if (step.kind === 'command') await both(step.command, `${item.name} · step ${index + 1}`);
+            if (step.kind === 'command') { link.cancelStream(); await both(step.command, `${item.name} · step ${index + 1}`); }
             else await Promise.all([simulate({motion_id: step.motion_id}), link.connected ? resolveMotion(step.motion_id).then(entry => live() && link.sendSkill(entry, entry.name, `${item.name} · step ${index + 1}`)) : null]);
             if (step.wait_ms) await wait(step.wait_ms);
           }
@@ -104,7 +104,8 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
       } finally { onStep?.(-1); }
     },
   });
-  Object.defineProperties(control, {connected: {get: () => true}, developerMode: {get: () => link.developerMode}});
+  Object.defineProperties(control, {connected: {get: () => true}, developerMode: {get: () => link.developerMode},
+    playbackMode: {get: () => link.playbackMode, set: mode => { link.playbackMode = mode; }}});
   link.addEventListener('state', () => control.dispatchEvent(new CustomEvent('state', {detail: controlStatus()})));
 
   // Real joint positions reported by the robot (Read / Live positions) pose the simulated Bittle through Servo setup.

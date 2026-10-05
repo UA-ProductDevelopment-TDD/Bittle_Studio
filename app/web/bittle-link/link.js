@@ -30,6 +30,9 @@ export function createLink() {
   let port, writer, reader, readTask, closing = false, busy = false, epoch = 0, message = '';
   let writeQueue = Promise.resolve(), uploadedSignature = '', developerMode = true;
   let rxLine = '', lastJoints = null;  // last joint list reported by the robot (servo degrees, index = servo number)
+  // Custom skills play either streamed (frames sent as binary I packets, starts at once) or uploaded (one K packet).
+  let playbackMode = 'stream', streamId = 0, lastStreamed = null;
+  try { playbackMode = localStorage.getItem('bittle-playback') === 'upload' ? 'upload' : 'stream'; } catch {}
 
   const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, {detail}));
   const log = (kind, text) => emit('log', {kind, message: text});
@@ -127,10 +130,42 @@ export function createLink() {
     return writeBytes(packet, `K upload · ${description} · ${packet.length} bytes`, origin, true);
   }
 
-  // Firmware skills: {skill: int[], signature, type}. The last uploaded skill lives in the firmware's T slot,
-  // so an unchanged skill is recalled with a single 'T' instead of a full upload.
-  async function sendSkill({skill, signature}, name = 'Custom skill', origin = name) {
+  // Streaming: decode the skill's frames (16 servo angles each, as in the K packet built by motion_export.py) and send
+  // the walking servos of every frame as one binary I packet on a fixed time grid. Gaits loop until another command.
+  const STREAM_SERVOS = [0, 8, 9, 10, 11, 12, 13, 14, 15];  // head + 8 legs: 9 pairs fill one 20-byte BLE packet
+  function skillFrames(skill) {
+    if (skill[0] === 1) return [skill.slice(4, 20)];
+    const frames = [];
+    for (let i = 0; i < -skill[0]; i++) frames.push(skill.slice(7 + i * 20, 7 + i * 20 + 16));
+    return frames;
+  }
+  function cancelStream() { streamId++; }
+  function streamSkill(entry, name, origin) {
+    const frames = skillFrames(entry.skill), hz = Math.max(1, Math.min(50, Number(entry.hz) || 20));
+    const id = ++streamId, token = epoch, interval = 1000 / hz, live = () => id === streamId && token === epoch && connected;
+    lastStreamed = {entry, name};
+    log('INFO', `${name} streamed: ${frames.length} frame${frames.length === 1 ? '' : 's'} at ${hz} Hz${entry.type === 'gait' ? ', looping' : ''}`);
+    const run = async () => {
+      let n = 0;
+      const start = performance.now();
+      do {
+        for (const frame of frames) {
+          const due = start + n++ * interval - performance.now();
+          if (due > 0) await sleep(due);
+          if (!live()) return;
+          await sendPose(STREAM_SERVOS.flatMap(servo => [servo, frame[servo]]), origin);
+        }
+      } while (entry.type === 'gait' && live());
+    };
+    return run().catch(error => log('ERROR', error.message));
+  }
+
+  // Firmware skills: {skill: int[], signature, type, hz}. In upload mode the last uploaded skill lives in the firmware's
+  // T slot, so an unchanged skill is recalled with a single 'T' instead of a full upload.
+  async function sendSkill(entry, name = 'Custom skill', origin = name) {
     guard();
+    if (playbackMode === 'stream') { streamSkill(entry, name, origin); return; }
+    const {skill, signature} = entry;
     if (signature && uploadedSignature === signature) { await sendCommand('T', origin); log('INFO', `${name} recalled instantly with T`); }
     else { await uploadSkill(skill, name, origin); uploadedSignature = signature || ''; log('INFO', `${name} stored as the firmware's T skill`); }
   }
@@ -165,6 +200,8 @@ export function createLink() {
     if (command === 'fp') { await readPositions(token, origin || 'Read positions').catch(error => { if (error.message !== STOPPED) throw error; }); setState(); return; }
     if (command === 'fP') { livePositions(token); setState('Reading positions live · press any command to stop'); return; }
     if (command === '#on') { await motorsOn(origin || 'Motors on'); setState(); return; }
+    // In stream mode nothing was uploaded, so 'play last skill' streams the last custom skill again.
+    if (command === 'T' && playbackMode === 'stream' && lastStreamed) { streamSkill(lastStreamed.entry, lastStreamed.name, origin || 'Play last skill'); setState(); return; }
     await sendCommand(command, origin);
     // gb/gB are developer mode's own commands, so keep its state truthful when they are sent directly.
     if (command === 'gb' || command === 'gB') { developerMode = command === 'gb'; log('INFO', developerMode ? 'Gyro off · developer mode on' : 'Gyro on · developer mode off'); }
@@ -199,7 +236,7 @@ export function createLink() {
         for (const [index, step] of item.steps.entries()) {
           if (token !== epoch || !connected) throw new Error(STOPPED);
           onStep?.(index);
-          if (step.kind === 'command') await sendCommand(step.command, `${item.name} · step ${index + 1}`);
+          if (step.kind === 'command') { cancelStream(); await sendCommand(step.command, `${item.name} · step ${index + 1}`); }
           else {
             if (!resolveMotion) throw new Error('This console cannot run Studio functions.');
             const entry = await resolveMotion(step.motion_id);
@@ -218,7 +255,10 @@ export function createLink() {
     status, connect, disconnect, cleanup, sendCommand, sendPose, uploadSkill, sendSkill, runSkill,
     press, stop, setDeveloperMode, playSamples, runSequence,
     markBusy(value, text) { busy = !!value; setState(text); },
+    cancelStream,
   });
+  const setPlaybackMode = mode => { playbackMode = mode === 'upload' ? 'upload' : 'stream'; try { localStorage.setItem('bittle-playback', playbackMode); } catch {} log('INFO', `Custom skills will be ${playbackMode === 'stream' ? 'streamed frame by frame' : 'uploaded as one skill'}`); };
   // Live getters (Object.assign would copy their current values instead).
-  return Object.defineProperties(events, {connected: {get: () => connected}, developerMode: {get: () => developerMode}, lastJoints: {get: () => lastJoints}});
+  return Object.defineProperties(events, {connected: {get: () => connected}, developerMode: {get: () => developerMode}, lastJoints: {get: () => lastJoints},
+    playbackMode: {get: () => playbackMode, set: setPlaybackMode}});
 }

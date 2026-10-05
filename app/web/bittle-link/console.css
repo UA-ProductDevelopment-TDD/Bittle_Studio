@@ -160,3 +160,6 @@
 /* Seven tabs: wrap onto two rows rather than clipping names like "Robot settings". */
 .console-tabs { flex-wrap: wrap; row-gap: 0; }
 .console-tabs button { flex: 1 0 auto; padding: 6px 8px; }
+
+.playback-mode { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; }
+.playback-mode select { padding: 3px 6px; }

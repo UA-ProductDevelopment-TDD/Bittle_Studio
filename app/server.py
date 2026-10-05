@@ -665,7 +665,7 @@ def controls_pack(body: dict):
             except ValueError as error:
                 raise ValueError(f'Studio function “{item["name"]}” cannot be exported: {error}') from error
             skills.append({'id': item['id'], 'name': item['name'], 'motion_type': item['motion_type'],
-                           'type': metadata['type'], 'signature': metadata['signature'], 'skill': skill})
+                           'type': metadata['type'], 'signature': metadata['signature'], 'hz': metadata['firmware_hz'], 'skill': skill})
         checkpoint()
         return {'format': 'bittle-link-pack', 'version': 1, 'controls': sim.controls, 'skills': skills}
 

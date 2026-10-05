@@ -7,16 +7,22 @@ import {packJointCommands} from './link.js';
 //   store:   {load(): Promise<controls[]>, save(controls): Promise<controls[]>}
 //   library: {list(): [{id, name, motion_type}], resolve(id): Promise<{skill, signature, type, name}>}  (optional)
 //   tools:   [{label, title, onClick}] extra buttons beside “My buttons”, e.g. import/export.
-const GAITS = [['wk', 'Walk'], ['tr', 'Trot'], ['cr', 'Crawl'], ['gp', 'Gallop'], ['vt', 'Step'], ['lft', 'High step'], ['ph', 'Hop'], ['carpet', 'Carpet']];
+// [code, label, directions]: most gaits exist forward and left (right is mirrored); bound and jump only go forward,
+// and the Halloween walk has no direction suffix at all ('' = forward only, sent as the bare name).
+const GAITS = [['wk', 'Walk'], ['tr', 'Trot'], ['cr', 'Crawl'], ['gp', 'Gallop'], ['vt', 'Step'], ['lft', 'High step'], ['ph', 'Hop'], ['carpet', 'Carpet'],
+  ['bd', 'Bound', 'F'], ['jp', 'Jump forward', 'F'], ['hlw', 'Halloween', '']];
+const gaitCommand = (code, dirs = 'FLR', d) => dirs === '' ? (d === 'F' ? `k${code}` : null) : dirs.includes(d) ? `k${code}${d}` : null;
 const PAD = [['↖', 'L', 'Forward left'], ['↑', 'F', 'Forward'], ['↗', 'R', 'Forward right'], ['⟲', 'kvtL', 'Turn left on the spot'], ['■', 'kbalance', 'Stop'], ['⟳', 'kvtR', 'Turn right on the spot'], ['↙', 'kbkL', 'Back left'], ['↓', 'kbk', 'Back'], ['↘', 'kbkR', 'Back right']];
-const POSTURES = [['kbalance', 'Balance'], ['kup', 'Stand up'], ['ksit', 'Sit'], ['krest', 'Rest'], ['kstr', 'Stretch'], ['kbuttUp', 'Butt up'], ['kzero', 'Zero'], ['kcalib', 'Calibrate'], ['m 0 30', 'Look left'], ['m 0 0', 'Look ahead'], ['m 0 -30', 'Look right']];
-const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['kgdb', 'Goodbye'], ['khg', 'Hug'], ['kchr', 'Cheer'], ['knd', 'Nod'], ['kwh', 'Head wave'], ['ksnf', 'Sniff'], ['kscrh', 'Scratch'], ['kck', 'Check'], ['kdg', 'Dig'], ['kpee', 'Pee'], ['kpu', 'Push-ups'], ['kpu1', 'One-arm push-up'], ['kbx', 'Box'], ['kkc', 'Kick'], ['kjmp', 'Jump'], ['kmw', 'Moonwalk'], ['kts', 'Twist'], ['kzz', 'Zigzag'], ['krl', 'Roll'], ['kpd', 'Play dead'], ['krc', 'Recover'], ['kff', 'Front flip', true], ['kbf', 'Back flip', true]];
+const POSTURES = [['kbalance', 'Balance'], ['kup', 'Stand up'], ['ksit', 'Sit'], ['krest', 'Rest'], ['kstr', 'Stretch'], ['kbuttUp', 'Butt up'], ['kzero', 'Zero'], ['kcalib', 'Calibrate'], ['klifted', 'Lifted'], ['kdropped', 'Dropped'], ['klnd', 'Landing'], ['m 0 30', 'Look left'], ['m 0 0', 'Look ahead'], ['m 0 -30', 'Look right']];
+const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['kgdb', 'Goodbye'], ['khg', 'Hug'], ['kchr', 'Cheer'], ['knd', 'Nod'], ['kwh', 'Head wave'], ['ksnf', 'Sniff'], ['kscrh', 'Scratch'], ['kck', 'Check'], ['kdg', 'Dig'], ['kpee', 'Pee'], ['kpu', 'Push-ups'], ['kpu1', 'One-arm push-up'], ['kbx', 'Box'], ['kkc', 'Kick'], ['kjmp', 'Jump'], ['kmw', 'Moonwalk'], ['kts', 'Twist'], ['kzz', 'Zigzag'], ['krl', 'Roll'], ['kpd', 'Play dead'], ['krc', 'Recover'], ['kdropRec', 'Drop recovery'], ['kang', 'Angry'], ['kclap', 'Clap'], ['kcmh', 'Come here'], ['khu', 'Hands up'], ['khunt', 'Hunt'], ['kknock', 'Knock'], ['klucky', 'Lucky cat'], ['kshowOff', 'Show off'], ['ktbl', 'Be a table'], ['khds', 'Handstand', true], ['klpov', 'Leap over', true], ['kff', 'Front flip', true], ['kbf', 'Back flip', true]];
 // Robot settings. Gyro: gB enables balance/gyro assistance, gb disables it (the same commands developer mode sends).
 // Petoi voice command module: XAc enables its reply tone and reactions, XAd silences and disables them.
 // Servos: d = rest pose then all servos off; #on = servos back on holding the last read positions (link.js macro);
 // fp / fP = soft servos and read the real joint angles once / continuously (link.js sends f then j).
 const MODULES = [['d', 'Motors off', 'rest pose, then every servo off (limp)'], ['#on', 'Motors on', 'servos back on, holding the last read positions (or balance)'],
-  ['fp', 'Read positions', 'servos go soft; read the real joint angles once'], ['fP', 'Live positions', 'servos go soft; keep reading the real joint angles until another command'], ['gB', 'Gyro on', 'balance/gyro assistance'], ['gb', 'Gyro off', 'balance/gyro assistance'], ['XAc', 'Voice module on', 'Petoi voice command module'], ['XAd', 'Voice module off', 'Petoi voice command module']];
+  ['fp', 'Read positions', 'servos go soft; read the real joint angles once'], ['fP', 'Live positions', 'servos go soft; keep reading the real joint angles until another command'], ['gB', 'Gyro on', 'balance/gyro assistance'], ['gb', 'Gyro off', 'balance/gyro assistance'], ['XAc', 'Voice module on', 'Petoi voice command module'], ['XAd', 'Voice module off', 'Petoi voice command module'],
+  ['b14 8', 'Beep', 'short beep (b note duration)'], ['u', 'Meow', 'meow sound'], ['P', 'Battery voltage', 'print the battery voltage'], ['?', 'Firmware version', 'print the firmware version'],
+  ['z', 'Random behaviours', 'toggle random idle behaviours on/off'], ['.', 'Faster', 'play skills faster'], [',', 'Slower', 'play skills slower']];
 // Direct servo control with OpenCat's ASCII "i index angle" command, in firmware (servo) degrees.
 const SERVOS = [[0, 'Head (neck)'], [8, 'Left front shoulder'], [12, 'Left front knee'], [9, 'Right front shoulder'], [13, 'Right front knee'],
   [11, 'Left back shoulder'], [15, 'Left back knee'], [10, 'Right back shoulder'], [14, 'Right back knee']];
@@ -24,7 +30,7 @@ const SERVO_LIMIT = 90, BLE_TEXT = 19, SLIDER_INTERVAL_MS = 80;
 // English names of console commands (used by the serial monitor to explain what was sent).
 const DIRECTIONS = {F: 'forward', L: 'turning left', R: 'turning right'};
 export const COMMAND_NAMES = Object.fromEntries([
-  ...GAITS.flatMap(([code, label]) => Object.entries(DIRECTIONS).map(([d, name]) => [`k${code}${d}`, `${label} ${name}`])),
+  ...GAITS.flatMap(([code, label, dirs]) => Object.entries(DIRECTIONS).map(([d, name]) => [gaitCommand(code, dirs, d), `${label} ${name}`]).filter(([command]) => command)),
   ...PAD.filter(([, code]) => code.length > 1).map(([, code, title]) => [code, title]),
   ...POSTURES, ...SKILLS.map(([code, label]) => [code, label]), ...MODULES.map(([code, label]) => [code, label]),
 ]);
@@ -35,7 +41,7 @@ let datalistCount = 0;
 const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
 <div class="console-layout"><div class="console-drive" data-section="move"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
-<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="console-grid"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
+<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="console-grid"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div><label class="playback-mode" title="Stream: each frame of a saved function is sent as a joint command on its own timing (starts at once). Upload: the whole skill is sent in one K packet, then played by the robot.">Function playback <select data-part="playback"><option value="stream">Stream</option><option value="upload">Upload</option></select></label></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
 <details data-part="jointPanel" class="console-joints" open><summary><h4>Joints</h4><span class="note">Move each servo directly (servo degrees, sent as <code>i servo angle</code>).</span></summary>
 <div data-part="joints" class="joint-sliders"></div>
 <div class="joint-actions"><button type="button" data-part="jointsZero">All to 0°</button><button type="button" data-part="jointsRelease">Release head</button><button type="button" data-part="jointsRead">Read angles</button></div>
@@ -75,11 +81,18 @@ export function initConsole(root, {link, toast = message => console.warn(message
     part('last').textContent = `${label} · ${command}`;
   }
   function renderStatic() {
-    part('gaits').replaceChildren(...GAITS.map(([code, label]) => { const b = button(label, `k${code}F / L / R`, () => { gait = code; renderStatic(); }); b.classList.toggle('selected', code === gait); return b; }));
-    part('pad').replaceChildren(...PAD.map(([glyph, code, title]) => { const command = code.length === 1 ? `k${gait}${code}` : code; return button(glyph, `${title} · ${command}`, () => press(command, title, 'Move'), code === 'kbalance' ? 'pad-stop' : ''); }));
+    const dirsOf = code => GAITS.find(entry => entry[0] === code)?.[2] ?? 'FLR';
+    part('gaits').replaceChildren(...GAITS.map(([code, label, dirs = 'FLR']) => { const b = button(label, dirs === '' ? `k${code} (forward only)` : dirs === 'F' ? `k${code}F (forward only)` : `k${code}F / L / R`, () => { gait = code; renderStatic(); }); b.classList.toggle('selected', code === gait); return b; }));
+    part('pad').replaceChildren(...PAD.map(([glyph, code, title]) => {
+      const command = code.length === 1 ? gaitCommand(gait, dirsOf(gait), code) : code;
+      const b = button(glyph, command ? `${title} · ${command}` : 'This gait only goes forward', () => press(command, title, 'Move'), code === 'kbalance' ? 'pad-stop' : '');
+      if (!command) b.disabled = true;
+      return b;
+    }));
     part('postures').replaceChildren(...POSTURES.map(([code, label]) => button(label, code, () => press(code, label, 'Postures'))));
     part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label, 'Skills'), risky ? 'risky' : '')));
-    part('modules').replaceChildren(...MODULES.map(([code, label, what]) => button(label, `${code} · ${what}`, () => press(code, label, 'Robot settings'))));
+    if (part('playback')) { part('playback').value = link.playbackMode || 'stream'; part('playback').onchange = event => { link.playbackMode = event.target.value; }; }
+  part('modules').replaceChildren(...MODULES.map(([code, label, what]) => button(label, `${code} · ${what}`, () => press(code, label, 'Robot settings'))));
     part('tools').replaceChildren(...tools.map(tool => button(tool.label, tool.title, () => Promise.resolve(tool.onClick()).catch(fail))));
   }
   function renderMySkills() {

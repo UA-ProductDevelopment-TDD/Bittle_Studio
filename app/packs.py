@@ -66,7 +66,7 @@ def validate_pack(pack):
         skills.append({'id': str(raw['id'])[:64], 'name': str(raw['name'])[:80],
                        'motion_type': raw.get('motion_type', raw.get('type', 'behavior')),
                        'type': raw.get('type', raw.get('motion_type', 'behavior')),
-                       'signature': str(raw.get('signature', '')), 'skill': values})
+                       'signature': str(raw.get('signature', '')), 'hz': float(raw.get('hz', 20) or 20), 'skill': values})
     return {'format': PACK_FORMAT, 'version': 1, 'name': str(pack.get('name', ''))[:80],
             'exported': pack.get('exported') or datetime.now(timezone.utc).isoformat(timespec='seconds'),
             'controls': validate_controls(pack.get('controls', [])), 'skills': skills}

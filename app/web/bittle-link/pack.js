@@ -9,7 +9,7 @@ export function validatePack(pack) {
   if (!pack || pack.format !== PACK_FORMAT || pack.version !== 1) throw new Error('This is not a Bittle Link pack.');
   const skills = (pack.skills || []).map(raw => {
     if (!raw?.id || !raw.name || !Array.isArray(raw.skill) || !raw.skill.length || raw.skill.some(value => !Number.isInteger(value) || value < -128 || value > 255)) throw new Error('The pack contains an invalid skill.');
-    return {id: String(raw.id), name: String(raw.name).slice(0, 80), motion_type: raw.motion_type || raw.type || 'behavior', type: raw.type || raw.motion_type || 'behavior', signature: String(raw.signature || ''), skill: raw.skill};
+    return {id: String(raw.id), name: String(raw.name).slice(0, 80), motion_type: raw.motion_type || raw.type || 'behavior', type: raw.type || raw.motion_type || 'behavior', signature: String(raw.signature || ''), hz: Number(raw.hz) || 20, skill: raw.skill};
   });
   const controls = validateControls(pack.controls || []);
   return {controls, skills};
