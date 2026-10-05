@@ -2,6 +2,15 @@
 
 Design, simulate and send motions to a Petoi Bittle robot dog, all on your own computer. Bittle Studio pairs a 3D viewport and a real physics simulation (PyBullet) with a Bluetooth console for the physical robot. No account or cloud service is needed.
 
+## What you can do
+
+- **Design motions** on a timeline, pose by pose, and watch them in a 3D physics simulation before the robot ever moves.
+- **Play Petoi's built-in skills** (sit, walk, high five, flips...) in the simulator, using the firmware's own skill data.
+- **Drive the real Bittle** over Bluetooth: gaits, postures, skills, single joints and your own saved functions.
+- **Learn the real commands**: the serial monitor shows every command with a plain-language explanation, even when no robot is connected.
+- **Share your work** as motion packs, or export functions as Python scripts for Petoi's `PetoiRobot` library.
+- **Program it in Python** in the built-in code panel, or talk to it through the optional voice companion.
+
 **Just want to drive the robot?** The Bluetooth console runs online, with nothing to install: https://ua-productdevelopment-tdd.github.io/Bittle_Studio/
 
 ## Quick start

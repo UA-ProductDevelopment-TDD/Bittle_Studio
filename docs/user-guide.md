@@ -108,7 +108,7 @@ Open **Window → Python code**. The viewport remains above the editor.
 
 ### Additional robots
 
-Choose **URDF import → Add another robot** before importing a URDF/ZIP, or click **Add Bittle copy**. This adds another independently simulated body to the same world, including collisions with other bodies. Select it in Scene to edit its URDF, position, rotation or pinned-base setting. Use the **Robot** selector above the timeline to switch the joint panel, keyframes, playhead, Motion Hz and playback direction to that robot. Each robot keeps its own timeline in project files. **Write code for this robot** makes a starter controller attached to it. Scene objects offer the same shortcut.
+In **URDF / Xacro import**, choose **Add another robot** before importing a URDF/ZIP, or click **Add Bittle copy**. This adds another independently simulated body to the same world, including collisions with other bodies. Select it in Scene to edit its URDF, position, rotation or pinned-base setting. Use the **Robot** selector above the timeline to switch the joint panel, keyframes, playhead, Motion Hz and playback direction to that robot. Each robot keeps its own timeline in project files. **Write code for this robot** makes a starter controller attached to it. Scene objects offer the same shortcut.
 
 ### Simulated IMU / gyro
 

@@ -9,11 +9,17 @@ if not exist ".venv\Scripts\python.exe" (
 echo === Python tests ===
 ".venv\Scripts\python.exe" -m unittest discover -s app\tests -t app -v
 if errorlevel 1 goto failed
+where node >nul 2>&1
+if errorlevel 1 (
+  echo ^(Node.js not found: skipping the web syntax check^)
+  goto done
+)
 echo === Web syntax check ===
 for /r app\web %%f in (*.js) do (
   node --check "%%f"
   if errorlevel 1 goto failed
 )
+:done
 echo.
 echo All checks passed.
 pause

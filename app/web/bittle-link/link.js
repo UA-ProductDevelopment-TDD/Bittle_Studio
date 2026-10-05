@@ -210,24 +210,8 @@ export function createLink() {
   async function stop() { epoch++; const active = busy; busy = false; setState('Stopping…'); if (connected) await sendCommand('kbalance', 'Stop'); setState(connected ? 'Connected · motion stopped' : 'Not connected'); if (active) log('INFO', 'Motion stopped; balance pose requested'); }
   async function setDeveloperMode(enabled) { if (busy) await stop(); developerMode = !!enabled; if (connected) await sendCommand(enabled ? 'gb' : 'gB', 'Developer mode'); log('INFO', enabled ? 'Developer mode enabled' : 'Developer mode disabled'); setState(); }
 
-  // Streams timestamped servo poses [[seconds, values], ...] with I packets; gaits loop until stopped.
-  async function playSamples(samples, motionType, hz) {
-    if (!samples.length) throw new Error('This motion has no samples.');
-    const token = ++epoch; busy = true; setState(`Sending ${motionType}${hz ? ` · ${hz} Hz` : ''}`);
-    try {
-      await sendPose(samples[0][1]); if (motionType === 'pose') return;
-      let firstRound = true, round = 0;
-      do {
-        round++; const start = performance.now();
-        for (const [timestamp, values] of firstRound ? samples.slice(1) : samples) { const delay = start + timestamp * 1000 - performance.now(); if (delay > 0) await wait(delay, token); if (token !== epoch) throw new Error(STOPPED); await sendPose(values); }
-        log('INFO', `Round ${round} complete`); firstRound = false;
-      } while (motionType === 'gait' && token === epoch && connected);
-    } catch (error) { if (error.message !== STOPPED) throw error; }
-    finally { if (token === epoch) busy = false; setState(connected ? 'Connected · ready' : 'Not connected'); }
-  }
-
   // Composed buttons: {name, repeat, steps: [{kind: 'command', command, wait_ms} | {kind: 'motion', motion_id, wait_ms}]}.
-  // resolveMotion(motion_id) must return a firmware skill entry {skill, signature, type, name}.
+  // resolveMotion(motion_id) must return a firmware skill entry {skill, signature, type, hz, name}.
   async function runSequence(item, {resolveMotion, onStep} = {}) {
     guard();
     const token = ++epoch; busy = false; setState(`Running ${item.name}`); log('INFO', `Composed skill “${item.name}” started`);
@@ -253,7 +237,7 @@ export function createLink() {
 
   Object.assign(events, {
     status, connect, disconnect, cleanup, sendCommand, sendPose, uploadSkill, sendSkill, runSkill,
-    press, stop, setDeveloperMode, playSamples, runSequence,
+    press, stop, setDeveloperMode, runSequence,
     markBusy(value, text) { busy = !!value; setState(text); },
     cancelStream,
   });
