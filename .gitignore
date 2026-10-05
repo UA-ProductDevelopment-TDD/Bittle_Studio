@@ -1,4 +1,4 @@
-.venv/
+﻿.venv/
 node_modules/
 __pycache__/
 user-data/
@@ -6,5 +6,5 @@ data/
 *.log
 test-results/
 backups/
-.claude/_site/
+_site/
 _pages/
