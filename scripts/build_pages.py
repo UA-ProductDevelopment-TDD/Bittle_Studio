@@ -36,6 +36,8 @@ h1 {{ font-size: 2.2rem; margin: 0 0 8px; }}
 .card p {{ margin: 0; color: var(--muted); flex: 1; }}
 .button {{ display: inline-block; align-self: flex-start; background: var(--accent); color: #fff; text-decoration: none; padding: 9px 16px; border-radius: 8px; font-weight: 600; }}
 .button.secondary {{ background: transparent; color: var(--accent); border: 1px solid var(--accent); }}
+.actions {{ display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }}
+.link {{ color: var(--accent); font-size: .95rem; }}
 .note {{ color: var(--muted); font-size: .9rem; margin-top: 32px; }}
 code {{ background: var(--line); padding: 1px 5px; border-radius: 4px; }}
 </style></head>
@@ -44,7 +46,7 @@ code {{ background: var(--line); padding: 1px 5px; border-radius: 4px; }}
 <p class="lead">Design, simulate and send motions to a Petoi Bittle robot dog.</p>
 <div class="cards">
   <section class="card"><h2>Bittle Link</h2><p>The robot console in your browser: connect over Bluetooth, drive gaits, play Petoi skills and your own saved functions, with a serial monitor. Nothing to install.</p><a class="button" href="bittle-link/">Open Bittle Link</a></section>
-  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download it, run <code>setup.cmd</code>, then <code>launch-studio.cmd</code>.</p><a class="button secondary" href="{repo}">Get it on GitHub</a></section>
+  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download it, unzip, run <code>setup.cmd</code>, then <code>launch-studio.cmd</code>.</p><div class="actions"><a class="button secondary" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
   <section class="card"><h2>User guide</h2><p>How to set up servos, build motions, compose buttons and control the robot.</p><a class="button secondary" href="{repo}/blob/master/docs/user-guide.md">Read the guide</a></section>
 </div>
 <p class="note">Bluetooth from a web page needs Chrome or Edge on desktop or Android. Packs from the repository's <code>saved-motions/</code> folder can be loaded here; to save packs to that folder, use the local launcher.</p>
