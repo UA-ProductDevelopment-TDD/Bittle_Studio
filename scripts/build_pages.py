@@ -38,6 +38,8 @@ h1 {{ font-size: 2.2rem; margin: 0 0 8px; }}
 .button.secondary {{ background: transparent; color: var(--accent); border: 1px solid var(--accent); }}
 .actions {{ display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }}
 .link {{ color: var(--accent); font-size: .95rem; }}
+.card p.status {{ flex: 0; font-size: .85rem; }}
+.status.ok {{ color: var(--accent); }}
 .note {{ color: var(--muted); font-size: .9rem; margin-top: 32px; }}
 code {{ background: var(--line); padding: 1px 5px; border-radius: 4px; }}
 </style></head>
@@ -46,11 +48,20 @@ code {{ background: var(--line); padding: 1px 5px; border-radius: 4px; }}
 <p class="lead">Design, simulate and send motions to a Petoi Bittle robot dog.</p>
 <div class="cards">
   <section class="card"><h2>Bittle Link</h2><p>The robot console in your browser: connect over Bluetooth, drive gaits, play Petoi skills and your own saved functions, with a serial monitor. Nothing to install.</p><a class="button" href="bittle-link/">Open Bittle Link</a></section>
-  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download it, unzip, run <code>setup.cmd</code>, then <code>launch-studio.cmd</code>.</p><div class="actions"><a class="button secondary" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
+  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download it, unzip, run <code>setup.cmd</code>, then <code>launch-studio.cmd</code>.</p><a class="button" href="http://127.0.0.1:8765/" target="_blank" rel="noopener">Open Bittle Studio</a><p class="status" id="studioStatus">Checking whether the Studio is running on this computer…</p><div class="actions"><a class="button secondary" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
   <section class="card"><h2>User guide</h2><p>How to set up servos, build motions, compose buttons and control the robot.</p><a class="button secondary" href="{repo}/blob/master/docs/user-guide.md">Read the guide</a></section>
 </div>
 <p class="note">Bluetooth from a web page needs Chrome or Edge on desktop or Android. Packs from the repository's <code>saved-motions/</code> folder can be loaded here; to save packs to that folder, use the local launcher.</p>
-</main></body></html>
+</main>
+<script>
+// The Studio needs its local Python simulator, so "Open" points at the copy running on this computer.
+// An opaque no-cors request is enough to tell whether something answers on the Studio's port.
+const status = document.getElementById('studioStatus');
+fetch('http://127.0.0.1:8765/', {{mode: 'no-cors', cache: 'no-store'}})
+  .then(() => {{ status.textContent = '● Running on this computer'; status.classList.add('ok'); }})
+  .catch(() => {{ status.textContent = 'Not running here: start launch-studio.cmd first, then press Open.'; }});
+</script>
+</body></html>
 """
 
 
