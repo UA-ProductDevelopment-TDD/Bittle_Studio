@@ -48,13 +48,11 @@ code {{ background: var(--line); padding: 1px 5px; border-radius: 4px; }}
 <p class="lead">Design, simulate and send motions to a Petoi Bittle robot dog.</p>
 <div class="cards">
   <section class="card"><h2>Bittle Link</h2><p>The robot console in your browser: connect over Bluetooth, drive gaits, play Petoi skills and your own saved functions, with a serial monitor. Nothing to install.</p><a class="button" href="bittle-link/">Open Bittle Link</a></section>
-  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download the ZIP, unzip it, run <code>setup.cmd</code> once, then <code>launch-studio.cmd</code>.</p><a class="button" href="http://127.0.0.1:8765/" target="_blank" rel="noopener">Open Bittle Studio</a><p class="status">Opens the Studio running on this computer, so start <code>launch-studio.cmd</code> first.</p><div class="actions"><a class="button secondary" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
+  <section class="card"><h2>Bittle Studio</h2><p>The full studio with a 3D viewport and physics simulation runs on your own computer. Download the ZIP, unzip it, run <code>setup.cmd</code> once, then <code>launch-studio.cmd</code>.</p><div class="actions"><a class="button" href="{repo}/archive/refs/heads/master.zip">Download ZIP</a><a class="link" href="{repo}">View on GitHub</a></div></section>
   <section class="card"><h2>User guide</h2><p>How to set up servos, build motions, compose buttons and control the robot.</p><a class="button secondary" href="{repo}/blob/master/docs/user-guide.md">Read the guide</a></section>
 </div>
 <p class="note">Bluetooth from a web page needs Chrome or Edge on desktop or Android. Packs from the repository's <code>saved-motions/</code> folder can be loaded here; to save packs to that folder, use the local launcher.</p>
 </main>
-<!-- The Studio needs its local Python simulator, so "Open" points at the copy running on this computer.
-     Browsers block a public page from probing localhost, so there is no "is it running" check. -->
 </body></html>
 """
 
