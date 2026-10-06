@@ -23,11 +23,12 @@ Design, simulate and send motions to a Petoi Bittle robot dog, all on your own c
 | **Install once** | double-click **Setup** | double-click **Setup** | run `./setup.sh` |
 | **Start the full Studio** | double-click **Start Bittle Studio** | double-click **Start Bittle Studio** | run `./start-studio.sh` |
 | **Start only the robot console** | double-click **Start Bittle Link** | double-click **Start Bittle Link** | run `./start-bittle-link.sh` |
-| **Get the latest version** | double-click **Update** | double-click **Update** | run `./update.sh` |
 
 The Studio opens in your browser at http://127.0.0.1:8765 and the robot console at http://127.0.0.1:8770. Keep the black terminal window open while you work, and press **Ctrl+C** in it to stop.
 
 Use **Chrome or Edge**, because Bluetooth from a web page only works there.
+
+**Getting a new version:** with git, pull (`git pull`, or **Pull** in GitHub Desktop); from a ZIP, download the new ZIP, unzip it, and copy your `saved-motions/` and `user-data/` folders into it. Then run **Setup** again: it installs whatever changed.
 
 <details><summary>Mac or Linux: the launcher won't open?</summary>
 
@@ -140,7 +141,7 @@ Code runs on your computer with your rights: only run code you trust.
 ```
 Bittle-studio/
 ├─ README.md            ← you are here
-├─ launchers/           ← START HERE: Setup, Start Bittle Studio, Start Bittle Link, Update
+├─ launchers/           ← START HERE: Setup, Start Bittle Studio, Start Bittle Link
 │  ├─ windows/
 │  ├─ mac/
 │  └─ linux/

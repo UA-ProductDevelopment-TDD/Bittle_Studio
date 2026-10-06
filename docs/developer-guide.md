@@ -49,7 +49,7 @@ The URL prefixes `/assets` and `/data` are stored inside saved projects, so they
 | `voice_tools.py` | Tool definitions for the optional voice companion. |
 | `launcher.py` | Starts `server.py` (or reuses a running one) and opens the browser. |
 | `bittle_link.py` | Stdlib-only server for the standalone console (port 8770) and the `saved-motions/` folder. |
-| `install.py` | Stdlib-only installer behind every Setup/Update launcher: creates `.venv`, installs `requirements.txt`, and downloads three.js from the npm registry, verified against `package-lock.json`. Node.js is not needed. |
+| `install.py` | Stdlib-only installer behind every Setup launcher (run again after a new version): creates `.venv`, installs `requirements.txt`, and downloads three.js from the npm registry, verified against `package-lock.json`. Node.js is not needed. |
 | `requirements.txt` | Pinned Python packages. |
 | `package.json`, `package-lock.json` | Pin the three.js version. `install.py` reads only the lock file; developers with Node.js can still run `npm ci --prefix app`. |
 

@@ -1,7 +1,5 @@
-"""Install or update Bittle Studio on Windows, macOS or Linux (called by the Setup / Update launchers).
-
-    python app/install.py            create .venv, install the Python packages and the 3D viewer library
-    python app/install.py --update   first get the latest version from GitHub (git pull), then install
+"""Install Bittle Studio on Windows, macOS or Linux (called by the Setup launchers): create .venv, install the
+Python packages and the 3D viewer library. Run again after getting a new version, it installs whatever changed.
 
 Only the Python standard library is used here, so any Python 3.10-3.12 can run it.
 The 3D viewer library (three.js) is downloaded straight from the npm registry and checked against
@@ -32,17 +30,6 @@ def step(text):
 def fail(text):
     print(f'\nSetup stopped: {text}', flush=True)
     sys.exit(1)
-
-
-def update():
-    step('Getting the latest version')
-    if not (ROOT / '.git').exists():
-        fail('this folder was not downloaded with git. Download the newest ZIP from GitHub instead, '
-             'and copy your saved-motions/ and user-data/ folders into it.')
-    if not shutil.which('git'):
-        fail('git is not installed. Install it from https://git-scm.com, or download the newest ZIP from GitHub.')
-    if subprocess.call(['git', 'pull', '--ff-only'], cwd=ROOT):
-        fail('could not update automatically (you may have local changes). Ask for help, or use GitHub Desktop.')
 
 
 def python_packages():
@@ -91,8 +78,6 @@ def viewer_library():
 
 
 def main():
-    if '--update' in sys.argv:
-        update()
     python_packages()
     viewer_library()
     (ROOT / 'saved-motions').mkdir(exist_ok=True)
