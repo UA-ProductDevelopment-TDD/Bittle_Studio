@@ -60,7 +60,7 @@ Bittle-studio/
 
 1. In the Studio, make a motion on the **timeline** (pose the joints, add keyframes, press play).
 2. Press **★ Save as function** in the timeline and give it a name; it appears in the **Functions** list next to the timeline.
-3. In the inspector's **Control** tab, under **Commands**, press **+ New button** to combine your functions with built-in tricks, then press **Save pack**. The pack is written to `saved-motions/`.
+3. In **Robot control**, on the **Buttons** tab, press **+ New button** to combine your functions with built-in tricks, then press **Save pack**. The pack is written to `saved-motions/`.
 4. Start **Start Bittle Link**, press **Import pack** and choose your pack.
 5. **Connect Bittle** and press your buttons.
 
@@ -68,5 +68,5 @@ Before the first real run, open **Servo setup** in the top bar: connect, press *
 
 ## Learn more
 
-- [User guide](docs/user-guide.md): every panel, importing robots, physics, Python controllers, voice, Bittle Link.
-- [Developer guide](docs/developer-guide.md): how the code is organised, APIs, and how to test changes (`dev-tools/run-tests.cmd` or `dev-tools/run-tests.sh`).
+- [User guide](docs/user-guide.md): what each part of the Studio does, by task: making motions, controlling and connecting the robot, sharing, Python, voice.
+- [Developer guide](docs/developer-guide.md): how it works inside: the code, the robot protocol, the APIs, importing, the Python runner, the physics and its limits, licences, and how to test changes (`dev-tools/run-tests.cmd` or `dev-tools/run-tests.sh`).
