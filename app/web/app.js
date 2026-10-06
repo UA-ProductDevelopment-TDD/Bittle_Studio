@@ -159,7 +159,7 @@ async function buildRobot() {
     else if(v.type === 'sphere') {mesh=new THREE.Mesh(new THREE.SphereGeometry(Number(v.radius),32,24));}
     else if(v.type === 'cylinder') {mesh=new THREE.Mesh(new THREE.CylinderGeometry(Number(v.radius),Number(v.radius),Number(v.length),32));mesh.geometry.rotateX(Math.PI/2);}
     else {throw new Error('Unsupported URDF visual: ' + v.type);}
-    let color = /knee|cover/.test(v.link) ? '#eab94f' : /shoulder/.test(v.link) ? '#333d46' : /board|imu/.test(v.link) ? '#355c43' : '#5d6c76';
+    let color = /knee|cover|head|neck/.test(v.link) ? '#eab94f' : /shoulder/.test(v.link) ? '#333d46' : /board|imu/.test(v.link) ? '#355c43' : '#5d6c76';
     if(v.color) color=new THREE.Color(...v.color.slice(0,3));
     materialize(mesh,color);mesh.position.fromArray(v.position);mesh.quaternion.fromArray(v.quaternion);group.add(mesh);
   }));
@@ -230,7 +230,7 @@ function buildJoints() {
   const servos=robot.joints.map(j=>bittleServo(j.name));
   if(servos.every(s=>s>=0)&&new Set(servos).size===servos.length){
     $('jointControls').classList.add('composer');
-    renderJointLayout($('jointControls'),robot.joints.map((j,i)=>({servo:servos[i],label:label(j.name),title:servos[i]===0?'Head pan':/knee/.test(j.name)?'Knee':'Shoulder',min:j.lower,max:j.upper,step:.1,value:robot.targets[j.name]??0,sliderId:'joint-'+j.id,numberId:'angle-'+j.id,onInput:(v,slider,number)=>setJoint(j,v,slider,number),onCommit:(v,slider,number)=>setJoint(j,v,slider,number)})));
+    renderJointLayout($('jointControls'),robot.joints.map((j,i)=>({servo:servos[i],label:label(j.name),title:servos[i]===0?'Head pan':/knee/.test(j.name)?'Knee':'Shoulder',mirrored:servos[i]===0,min:j.lower,max:j.upper,step:.1,value:robot.targets[j.name]??0,sliderId:'joint-'+j.id,numberId:'angle-'+j.id,onInput:(v,slider,number)=>setJoint(j,v,slider,number),onCommit:(v,slider,number)=>setJoint(j,v,slider,number)})));
     return;
   }
   $('jointControls').classList.remove('composer');

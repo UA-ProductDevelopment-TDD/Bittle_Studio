@@ -3,7 +3,8 @@
 // Events: 'log' {kind, message}, 'state' {connected, transport, testMode, busy, developerMode, message}, 'rx' {text} (raw replies),
 // 'joints' {angles: [16 servo angles]} whenever the robot reports its joint list (the j command),
 // 'tx' {text, origin, binary, size} for every write that reached the robot (origin = the control that sent it).
-// Console macros handled by press(): 'fp' read real positions once, 'fP' keep reading, '#on' switch the servos back on.
+// Console macros handled by press(): 'fp' read real positions once, 'fP' keep reading, '#on' switch the servos back on,
+// '#random-on' / '#random-off' set the random behaviours, which the firmware only toggles.
 
 const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
@@ -30,6 +31,7 @@ export function createLink() {
   let port, writer, reader, readTask, closing = false, busy = false, epoch = 0, message = '';
   let writeQueue = Promise.resolve(), uploadedSignature = '', developerMode = true;
   let rxLine = '', lastJoints = null;  // last joint list reported by the robot (servo degrees, index = servo number)
+  let randomMind = null;  // whether the robot's random behaviours are on, as its last answer to z said (Z on, z off)
   // Custom skills play either streamed (frames sent as binary I packets, starts at once) or uploaded (one K packet).
   let playbackMode = 'stream', streamId = 0, lastStreamed = null;
   try { playbackMode = localStorage.getItem('bittle-playback') === 'upload' ? 'upload' : 'stream'; } catch {}
@@ -47,6 +49,7 @@ export function createLink() {
     rxLine = (rxLine + text).slice(-2000);
     const lines = rxLine.split(/\r?\n/); rxLine = lines.pop();
     for (const line of lines) {
+      if (line.trim() === 'Z' || line.trim() === 'z') randomMind = line.trim() === 'Z';
       const values = line.split(',').map(v => v.trim()).filter(Boolean);
       if (values.length === 16 && values.every(v => /^-?\d+$/.test(v))) { lastJoints = values.map(Number); emit('joints', {angles: lastJoints}); }
     }
@@ -103,10 +106,12 @@ export function createLink() {
   }
   // Test mode answers j like the firmware (=, servo numbers, 16 angles), using the angles it was sent with i/m.
   const testAngles = new Array(16).fill(0);
+  let testRandom = true;  // OpenCat starts with its random behaviours on
   function testReply(bytes) {
     const text = new TextDecoder().decode(bytes).trim();
     const joints = text.match(/^[im]\s*(-?\d+(?:\s+-?\d+)*)$/);
     if (joints) { const v = joints[1].split(/\s+/).map(Number); for (let i = 0; i + 1 < v.length; i += 2) if (v[i] >= 0 && v[i] < 16) testAngles[v[i]] = v[i + 1]; }
+    if (text === 'z') { testRandom = !testRandom; setTimeout(() => receivedText(testRandom ? 'Z\r\n' : 'z\r\n'), 30); }
     if (text === 'j') setTimeout(() => receivedText(`=\r\n${[...Array(16).keys()].join('\t')}\t\r\n${testAngles.join(',\t')},\t\r\n`), 30);
   }
   function sendCommand(command, origin = '') {
@@ -194,12 +199,28 @@ export function createLink() {
     for (const command of packJointCommands(pairs)) await sendCommand(command, origin);
     log('INFO', 'Motors on, holding the last read positions');
   }
+  async function setRandom(on, token, origin) {
+    // OpenCat has no 'on' or 'off' for its random behaviours, only z, which toggles them and answers Z when they are now
+    // on, z when off: send z, and once more when the answer is the other way.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      randomMind = null;
+      await sendCommand('z', origin);
+      const started = performance.now();
+      while (randomMind === null && performance.now() - started < 1000) await wait(20, token);
+      if (randomMind === null) { log('INFO', 'No answer to z: this firmware may have no random behaviours (RANDOM_MIND)'); return; }
+      if (randomMind === on) { log('INFO', on ? 'Random behaviours on' : 'Random behaviours off'); return; }
+    }
+  }
   async function press(command, origin = '') {
     guard(); epoch++; busy = false;
     const token = epoch;
     if (command === 'fp') { await readPositions(token, origin || 'Read positions').catch(error => { if (error.message !== STOPPED) throw error; }); setState(); return; }
     if (command === 'fP') { livePositions(token); setState('Reading positions live · press any command to stop'); return; }
     if (command === '#on') { await motorsOn(origin || 'Motors on'); setState(); return; }
+    if (command === '#random-on' || command === '#random-off') {
+      await setRandom(command === '#random-on', token, origin || 'Random behaviours').catch(error => { if (error.message !== STOPPED) throw error; });
+      setState(); return;
+    }
     // In stream mode nothing was uploaded, so 'play last skill' streams the last custom skill again.
     if (command === 'T' && playbackMode === 'stream' && lastStreamed) { streamSkill(lastStreamed.entry, lastStreamed.name, origin || 'Play last skill'); setState(); return; }
     await sendCommand(command, origin);

@@ -1,7 +1,8 @@
 // Joint sliders laid out like Petoi's Skill Composer: head pan on top, a top view of Bittle in the middle and each
 // leg's sliders at its own corner (knee outside, shoulder inside). Used by the robot console (servo degrees) and by
 // Studio's pose inspector (simulation joint degrees). Positions are keyed by OpenCat servo index.
-//   controls: [{servo, title, min, max, step, value, sliderId, numberId, onInput(value), onCommit(value)}]
+//   controls: [{servo, title, min, max, step, value, sliderId, numberId, mirrored, onInput(value), onCommit(value)}]
+//   mirrored: a horizontal slider whose largest angle is on the left, for a joint that turns left as its angle grows.
 
 export const LEGS = [['Left front', 'lf', [12, 8]], ['Right front', 'rf', [9, 13]], ['Left back', 'lb', [15, 11]], ['Right back', 'rb', [10, 14]]];
 const LEFT_SERVOS = new Set([8, 12, 11, 15]);
@@ -23,7 +24,7 @@ export function renderJointLayout(container, controls) {
 
   function control(spec, vertical) {
     // Left legs' sliders run top-to-bottom so both sides of the body feel mirrored, as the legs themselves are.
-    const box = document.createElement('div'); box.className = `joint-control${vertical ? ' vertical' : ''}${vertical && LEFT_SERVOS.has(spec.servo) ? ' inverted' : ''}`; box.dataset.servo = spec.servo;
+    const box = document.createElement('div'); box.className = `joint-control${vertical ? ' vertical' : ''}${vertical && LEFT_SERVOS.has(spec.servo) ? ' inverted' : ''}${!vertical && spec.mirrored ? ' mirrored' : ''}`; box.dataset.servo = spec.servo;
     const head = document.createElement('div'); head.className = 'joint-label';
     head.append(Object.assign(document.createElement('b'), {textContent: `(${spec.servo})`}), ` ${spec.title}`);
     const attrs = {min: spec.min, max: spec.max, step: spec.step ?? 1, value: spec.value};
@@ -42,7 +43,11 @@ export function renderJointLayout(container, controls) {
     }
     const limits = document.createElement('div'); limits.className = 'joint-range';
     if (vertical) limits.textContent = `${Math.round(spec.min)}…${Math.round(spec.max)}°`;
-    else limits.append(Object.assign(document.createElement('span'), {textContent: `${Math.round(spec.min)}°`}), Object.assign(document.createElement('span'), {textContent: `${Math.round(spec.max)}°`}));
+    else {
+      const ends = [`${Math.round(spec.min)}°`, `${Math.round(spec.max)}°`];
+      if (spec.mirrored) ends.reverse();
+      limits.append(...ends.map(text => Object.assign(document.createElement('span'), {textContent: text})));
+    }
     box.append(head, slider, limits, number);
     return box;
   }

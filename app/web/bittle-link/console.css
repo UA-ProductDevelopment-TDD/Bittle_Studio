@@ -6,7 +6,13 @@
 .console-status { flex: 1; margin: 0; padding: 10px 12px; background: #111a22; border-radius: 6px; color: var(--accent); }
 .console-top button { padding-inline: 18px; }
 .bittle-console.offline .console-status { color: var(--muted); }
-.bittle-console.offline .console-pad button, .bittle-console.offline .console-grid button:not(.custom-add) { opacity: .55; }
+.bittle-console.offline .console-pad button, .bittle-console.offline .console-grid button:not(.custom-add), .bittle-console.offline .settings-rows button { opacity: .55; }
+/* Robot settings: one row per setting, its name, then its buttons side by side (on, off). */
+.settings-rows { display: grid; gap: 6px; max-width: 560px; }
+.settings-row { display: grid; grid-template-columns: 140px 1fr; align-items: center; gap: 10px; }
+.settings-name { font-size: 13px; color: var(--muted); }
+.settings-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.settings-buttons button { padding: 7px 6px; font-size: 12px; }
 .console-layout { display: grid; grid-template-columns: 250px 1fr; gap: 22px; }
 .gait-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
 .gait-chips button { padding: 4px 9px; font-size: 12px; border-radius: 14px; }
@@ -132,6 +138,8 @@
   .console-drive { max-width: 260px; width: 100%; margin: 0 auto; }
   .console-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }
   .console-grid button { padding: 6px 3px; font-size: 11px; }
+  .settings-row { grid-template-columns: 1fr; gap: 3px; }
+  .settings-buttons button { padding: 6px 3px; font-size: 11px; }
   .bittle-console h4 { margin: 10px 0 6px; }
   .console-custom-head { flex-wrap: wrap; }
   .console-top button { padding-inline: 12px; }
@@ -142,6 +150,8 @@
 
 /* Left legs: minimum at the top (mirrors the right side). */
 .joint-control.vertical.inverted input[type=range] { direction: ltr; }
+/* The head: its largest angle, looking left, on the left. */
+.joint-control.mirrored input[type=range] { direction: rtl; }
 
 /* Tab mode (narrow hosts such as Studio's Robot control panel). */
 .console-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--line); }

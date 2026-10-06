@@ -19,10 +19,21 @@ const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['k
 // Petoi voice command module: XAc enables its reply tone and reactions, XAd silences and disables them.
 // Servos: d = rest pose then all servos off; #on = servos back on holding the last read positions (link.js macro);
 // fp / fP = soft servos and read the real joint angles once / continuously (link.js sends f then j).
-const MODULES = [['d', 'Motors off', 'rest pose, then every servo off (limp)'], ['#on', 'Motors on', 'servos back on, holding the last read positions (or balance)'],
-  ['fp', 'Read positions', 'servos go soft; read the real joint angles once'], ['fP', 'Live positions', 'servos go soft; keep reading the real joint angles until another command'], ['gB', 'Gyro on', 'balance/gyro assistance'], ['gb', 'Gyro off', 'balance/gyro assistance'], ['XAc', 'Voice module on', 'Petoi voice command module'], ['XAd', 'Voice module off', 'Petoi voice command module'],
-  ['b14 8', 'Beep', 'short beep (b note duration)'], ['u', 'Meow', 'meow sound'], ['P', 'Battery voltage', 'print the battery voltage'], ['?', 'Firmware version', 'print the firmware version'],
-  ['z', 'Random behaviours', 'toggle random idle behaviours on/off'], ['.', 'Faster', 'play skills faster'], [',', 'Slower', 'play skills slower']];
+// Random behaviours: the firmware only toggles them (z); #random-on / #random-off read its reply and set them (link.js macro).
+// Shown one row per setting, its on and off side by side: [setting, [[code, button label, full name, what it does], ...]].
+const SETTINGS = [
+  ['Motors', [['#on', 'On', 'Motors on', 'servos back on, holding the last read positions (or balance)'], ['d', 'Off', 'Motors off', 'rest pose, then every servo off (limp)']]],
+  ['Gyro', [['gB', 'On', 'Gyro on', 'balance/gyro assistance on'], ['gb', 'Off', 'Gyro off', 'balance/gyro assistance off']]],
+  ['Voice module', [['XAc', 'On', 'Voice module on', 'Petoi voice command module on'], ['XAd', 'Off', 'Voice module off', 'Petoi voice command module off']]],
+  ['Random behaviours', [['#random-on', 'On', 'Random behaviours on', 'random idle behaviours on (z, checked against the robot\'s reply)'],
+    ['#random-off', 'Off', 'Random behaviours off', 'random idle behaviours off (z, checked against the robot\'s reply)']]],
+  ['Joint positions', [['fp', 'Read once', 'Read positions', 'servos go soft; read the real joint angles once'],
+    ['fP', 'Read live', 'Live positions', 'servos go soft; keep reading the real joint angles until another command']]],
+  ['Sounds', [['b14 8', 'Beep', 'Beep', 'short beep (b note duration)'], ['u', 'Meow', 'Meow', 'meow sound']]],
+  ['Robot info', [['P', 'Battery voltage', 'Battery voltage', 'print the battery voltage'], ['?', 'Firmware version', 'Firmware version', 'print the firmware version']]]];
+// No faster or slower: OpenCat has T_ACCELERATE '.' and T_DECELERATE ',' switched off, and a built-in skill's speed is
+// fixed in its own frames.
+const MODULES = SETTINGS.flatMap(([, buttons]) => buttons.map(([code, , name, what]) => [code, name, what]));
 // Direct servo control with OpenCat's ASCII "i index angle" command, in firmware (servo) degrees.
 const SERVOS = [[0, 'Head (neck)'], [8, 'Left front shoulder'], [12, 'Left front knee'], [9, 'Right front shoulder'], [13, 'Right front knee'],
   [11, 'Left back shoulder'], [15, 'Left back knee'], [10, 'Right back shoulder'], [14, 'Right back knee']];
@@ -41,7 +52,7 @@ let datalistCount = 0;
 const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
 <div class="console-layout"><div class="console-drive" data-section="move"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
-<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="console-grid"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="console-grid"></div><label class="playback-mode" title="Stream: each frame of a saved function is sent as a joint command on its own timing (starts at once). Upload: the whole skill is sent in one K packet, then played by the robot.">Function playback <select data-part="playback"><option value="stream">Stream</option><option value="upload">Upload</option></select></label></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
+<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="console-grid"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="settings-rows"></div><label class="playback-mode" title="Stream: each frame of a saved function is sent as a joint command on its own timing (starts at once). Upload: the whole skill is sent in one K packet, then played by the robot.">Function playback <select data-part="playback"><option value="stream">Stream</option><option value="upload">Upload</option></select></label></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
 <details data-part="jointPanel" class="console-joints" open><summary><h4>Joints</h4><span class="note">Move each servo directly (servo degrees, sent as <code>i servo angle</code>).</span></summary>
 <div data-part="joints" class="joint-sliders"></div>
 <div class="joint-actions"><button type="button" data-part="jointsZero">All to 0°</button><button type="button" data-part="jointsRelease">Release head</button><button type="button" data-part="jointsRead">Read angles</button></div>
@@ -92,7 +103,14 @@ export function initConsole(root, {link, toast = message => console.warn(message
     part('postures').replaceChildren(...POSTURES.map(([code, label]) => button(label, code, () => press(code, label, 'Postures'))));
     part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label, 'Skills'), risky ? 'risky' : '')));
     if (part('playback')) { part('playback').value = link.playbackMode || 'stream'; part('playback').onchange = event => { link.playbackMode = event.target.value; }; }
-  part('modules').replaceChildren(...MODULES.map(([code, label, what]) => button(label, `${code} · ${what}`, () => press(code, label, 'Robot settings'))));
+  part('modules').replaceChildren(...SETTINGS.map(([setting, buttons]) => {
+      const row = document.createElement('div'); row.className = 'settings-row';
+      const name = document.createElement('span'); name.className = 'settings-name'; name.textContent = setting;
+      const group = document.createElement('div'); group.className = 'settings-buttons';
+      group.append(...buttons.map(([code, label, full, what]) => button(label, `${full} · ${code} · ${what}`, () => press(code, full, 'Robot settings'))));
+      row.append(name, group);
+      return row;
+    }));
     part('tools').replaceChildren(...tools.map(tool => button(tool.label, tool.title, () => Promise.resolve(tool.onClick()).catch(fail))));
   }
   function renderMySkills() {
@@ -146,8 +164,9 @@ export function initConsole(root, {link, toast = message => console.warn(message
         // While recording, each finished slider move becomes one command step of the button being edited.
         if (final && recording()) { editing.steps.push({kind: 'command', command: `i ${servo} ${angle}`, wait_ms: 500}); renderEditor(); }
       };
+      // OpenCat turns the head left as its angle grows (m 0 30 looks left): its slider is mirrored, so right turns it right.
       return {servo, label, title: servo === 0 ? 'Head pan' : label.replace(/^(Left|Right) (front|back) /, '').replace(/^./, c => c.toUpperCase()),
-        min: -SERVO_LIMIT, max: SERVO_LIMIT, step: 1, value: jointValues.get(servo),
+        min: -SERVO_LIMIT, max: SERVO_LIMIT, step: 1, value: jointValues.get(servo), mirrored: servo === 0,
         onInput: (value, slider, number) => set(value, false, slider, number), onCommit: (value, slider, number) => set(value, true, slider, number)};
     }));
   }

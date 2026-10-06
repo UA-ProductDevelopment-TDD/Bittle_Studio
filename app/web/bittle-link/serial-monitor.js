@@ -44,8 +44,8 @@ export function explainCommand(text) {
   if (t === 'T') return 'replay the last uploaded skill';
   if (t === 'p') return 'pause';
   if (t === 'u') return 'meow';
-  if (t === '.') return 'play skills faster';
-  if (t === ',') return 'play skills slower';
+  if (t === '.') return 'play skills faster (switched off in current OpenCat firmware)';
+  if (t === ',') return 'play skills slower (switched off in current OpenCat firmware)';
   if (t === 'P') return 'report the battery voltage';
   if (t === 'z') return 'toggle random behaviours';
   if (t === '?') return 'ask the firmware version';
