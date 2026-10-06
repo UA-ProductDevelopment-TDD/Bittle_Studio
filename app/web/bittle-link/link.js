@@ -1,6 +1,7 @@
 // Bittle Link: transport and OpenCat protocol for a Petoi Bittle, with no DOM or Studio dependencies.
 // Transports: 'ble' (Nordic UART over Web Bluetooth), 'serial' (Web Serial, 115200 baud) and 'test' (logs only).
-// Events: 'log' {kind, message}, 'state' {connected, transport, testMode, busy, developerMode, message}, 'rx' {text} (raw replies),
+// Events: 'log' {kind, message}, 'note' {message} (what the user should see, such as how a stream kept time),
+// 'state' {connected, transport, testMode, busy, developerMode, message}, 'rx' {text} (raw replies),
 // 'joints' {angles: [16 servo angles]} whenever the robot reports its joint list (the j command),
 // 'tx' {text, origin, binary, size} for every write that reached the robot (origin = the control that sent it).
 // Console macros handled by press(): 'fp' read real positions once, 'fP' keep reading, '#on' switch the servos back on,
@@ -38,6 +39,7 @@ export function createLink() {
 
   const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, {detail}));
   const log = (kind, text) => emit('log', {kind, message: text});
+  const note = text => { log('INFO', text); emit('note', {message: text}); };
   const status = () => ({connected, transport: mode, testMode: mode === 'test', busy, developerMode, message});
   const setState = (text = '') => { message = text; emit('state', status()); };
   const guard = () => { if (!connected) throw new Error('Connect Bittle first.'); };
@@ -150,17 +152,33 @@ export function createLink() {
     const id = ++streamId, token = epoch, interval = 1000 / hz, live = () => id === streamId && token === epoch && connected;
     lastStreamed = {entry, name};
     log('INFO', `${name} streamed: ${frames.length} frame${frames.length === 1 ? '' : 's'} at ${hz} Hz${entry.type === 'gait' ? ', looping' : ''}`);
+    // Real time, as the simulator plays it: each send is the frame due now, and the frames a slow link could not carry
+    // in time are skipped rather than queued, so the robot never falls behind; a motion ends on its last frame.
+    const send = frame => sendPose(STREAM_SERVOS.flatMap(servo => [servo, frame[servo]]), origin);
+    const loop = entry.type === 'gait', start = performance.now();
+    let sent = 0, next = 0, skipped = 0;
+    const report = () => {
+      const seconds = (performance.now() - start) / 1000, carried = seconds > 0 ? sent / seconds : hz;
+      if (!skipped) return note(`${name}: ${sent} frames at ${hz} Hz, on time`);
+      note(`${name}: asked ${hz} Hz, the link carried ${carried.toFixed(0)} Hz; ${skipped} of ${skipped + sent} frames skipped to stay on time. `
+        + 'Lower the function\'s Hz, or use USB, to send every frame.');
+    };
     const run = async () => {
-      let n = 0;
-      const start = performance.now();
-      do {
-        for (const frame of frames) {
-          const due = start + n++ * interval - performance.now();
-          if (due > 0) await sleep(due);
-          if (!live()) return;
-          await sendPose(STREAM_SERVOS.flatMap(servo => [servo, frame[servo]]), origin);
+      while (live()) {
+        // Always through a timer, even when late, so that Stop and everything else still get their turn.
+        await sleep(Math.max(0, start + next * interval - performance.now()));
+        if (!live()) break;
+        // The frame for now: those whose time passed while the last one was being sent are skipped.
+        const now = Math.max(next, Math.floor((performance.now() - start) / interval));
+        if (!loop && now >= frames.length) {
+          if (next < frames.length) { skipped += frames.length - 1 - next; await send(frames[frames.length - 1]); sent++; }
+          break;
         }
-      } while (entry.type === 'gait' && live());
+        skipped += now - next;
+        await send(frames[now % frames.length]); sent++;
+        next = now + 1;
+      }
+      report();
     };
     return run().catch(error => log('ERROR', error.message));
   }
@@ -207,7 +225,7 @@ export function createLink() {
       await sendCommand('z', origin);
       const started = performance.now();
       while (randomMind === null && performance.now() - started < 1000) await wait(20, token);
-      if (randomMind === null) { log('INFO', 'No answer to z: this firmware may have no random behaviours (RANDOM_MIND)'); return; }
+      if (randomMind === null) { note('No answer to z: this firmware may have no random behaviours (RANDOM_MIND)'); return; }
       if (randomMind === on) { log('INFO', on ? 'Random behaviours on' : 'Random behaviours off'); return; }
     }
   }

@@ -110,6 +110,12 @@ export function initSerialMonitor(root, {link, sendOrigin = 'Serial monitor', of
     rxBuffer += detail.text; flushRx(false);
     clearTimeout(rxTimer); rxTimer = setTimeout(() => flushRx(true), 250);  // replies without a trailing newline
   });
+  // What the link says the user should see, such as how a streamed function kept time.
+  link.addEventListener('note', ({detail}) => {
+    const note = document.createElement('div'); note.className = 'sm-row sm-note';
+    note.textContent = `${stamp()}  ${detail.message}`;
+    add(note);
+  });
   root.dataset.connected = String(link.connected);
   link.addEventListener('state', ({detail}) => {
     const now = String(detail.connected);
