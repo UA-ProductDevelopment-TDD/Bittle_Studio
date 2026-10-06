@@ -198,8 +198,9 @@ for(const kind of ['position','rotation','size']) for(let i=0;i<3;i++) {const l=
 function syncRobotFields(){const p=robotHandle.position,r=robotHandle.rotation;[p.x,p.y,p.z].forEach((v,i)=>$('robotPosition'+i).value=v.toFixed(4));[r.x,r.y,r.z].forEach((v,i)=>$('robotRotation'+i).value=THREE.MathUtils.radToDeg(v).toFixed(2));}
 function selectMainRobot(){selectedActor=null;selected=null;mainSelected=true;gizmoTarget='robot';gizmo.detach();selectionBox.visible=false;setTimelineTarget('main');tab('pose');$('selectRobot').classList.add('selected');$('inspectorTitle').textContent='Robot control';$('selectionLabel').textContent='BITTLE';renderObjectList();if(!state?.running)gizmo.attach(robotHandle);syncRobotFields();}
 on('selectRobot',selectMainRobot);
-on('moveRobot',()=>{selectMainRobot();gizmo.setMode('translate');});
-on('rotateRobot',()=>{selectMainRobot();gizmo.setMode('rotate');});
+// The robot's handle is shown only while physics is paused (selectMainRobot): say so rather than do nothing.
+on('moveRobot',()=>{selectMainRobot();gizmo.setMode('translate');if(state?.running)throw new Error('Pause physics before moving the robot');});
+on('rotateRobot',()=>{selectMainRobot();gizmo.setMode('rotate');if(state?.running)throw new Error('Pause physics before rotating the robot');});
 async function applyRobotPlacement(position,rotation){if(state?.running)throw new Error('Pause physics before moving the robot');await api('/api/robot-transform',{position,rotation});model.robot_position=position;model.robot_rotation=rotation;robotHandle.position.fromArray(position);robotHandle.rotation.set(...rotation,'XYZ');syncRobotFields();}
 on('applyRobotPlacement',()=>applyRobotPlacement([0,1,2].map(i=>Number($('robotPosition'+i).value)),[0,1,2].map(i=>THREE.MathUtils.degToRad(Number($('robotRotation'+i).value)))));
 on('resetRobotPlacement',()=>applyRobotPlacement([0,0,.2],[0,0,0]));

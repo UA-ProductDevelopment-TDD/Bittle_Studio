@@ -13,8 +13,20 @@ const GAITS = [['wk', 'Walk'], ['tr', 'Trot'], ['cr', 'Crawl'], ['gp', 'Gallop']
   ['bd', 'Bound', 'F'], ['jp', 'Jump forward', 'F'], ['hlw', 'Halloween', '']];
 const gaitCommand = (code, dirs = 'FLR', d) => dirs === '' ? (d === 'F' ? `k${code}` : null) : dirs.includes(d) ? `k${code}${d}` : null;
 const PAD = [['↖', 'L', 'Forward left'], ['↑', 'F', 'Forward'], ['↗', 'R', 'Forward right'], ['⟲', 'kvtL', 'Turn left on the spot'], ['■', 'kbalance', 'Stop'], ['⟳', 'kvtR', 'Turn right on the spot'], ['↙', 'kbkL', 'Back left'], ['↓', 'kbk', 'Back'], ['↘', 'kbkR', 'Back right']];
-const POSTURES = [['kbalance', 'Balance'], ['kup', 'Stand up'], ['ksit', 'Sit'], ['krest', 'Rest'], ['kstr', 'Stretch'], ['kbuttUp', 'Butt up'], ['kzero', 'Zero'], ['kcalib', 'Calibrate'], ['klifted', 'Lifted'], ['kdropped', 'Dropped'], ['klnd', 'Landing'], ['m 0 30', 'Look left'], ['m 0 0', 'Look ahead'], ['m 0 -30', 'Look right']];
-const SKILLS = [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['kgdb', 'Goodbye'], ['khg', 'Hug'], ['kchr', 'Cheer'], ['knd', 'Nod'], ['kwh', 'Head wave'], ['ksnf', 'Sniff'], ['kscrh', 'Scratch'], ['kck', 'Check'], ['kdg', 'Dig'], ['kpee', 'Pee'], ['kpu', 'Push-ups'], ['kpu1', 'One-arm push-up'], ['kbx', 'Box'], ['kkc', 'Kick'], ['kjmp', 'Jump'], ['kmw', 'Moonwalk'], ['kts', 'Twist'], ['kzz', 'Zigzag'], ['krl', 'Roll'], ['kpd', 'Play dead'], ['krc', 'Recover'], ['kdropRec', 'Drop recovery'], ['kang', 'Angry'], ['kclap', 'Clap'], ['kcmh', 'Come here'], ['khu', 'Hands up'], ['khunt', 'Hunt'], ['kknock', 'Knock'], ['klucky', 'Lucky cat'], ['kshowOff', 'Show off'], ['ktbl', 'Be a table'], ['khds', 'Handstand', true], ['klpov', 'Leap over', true], ['kff', 'Front flip', true], ['kbf', 'Back flip', true]];
+// Postures and skills in groups, each sized to fill rows of three buttons, so that grouping adds no row in a narrow panel.
+const POSTURE_GROUPS = [
+  ['Poses', [['kbalance', 'Balance'], ['kup', 'Stand up'], ['ksit', 'Sit'], ['krest', 'Rest'], ['kstr', 'Stretch'], ['kbuttUp', 'Butt up']]],
+  ['Head', [['m 0 30', 'Look left'], ['m 0 0', 'Look ahead'], ['m 0 -30', 'Look right']]],
+  ['Setup and falls', [['kzero', 'Zero'], ['kcalib', 'Calibrate'], ['klifted', 'Lifted'], ['kdropped', 'Dropped'], ['klnd', 'Landing']]]];
+const SKILL_GROUPS = [
+  ['Greetings', [['khi', 'Hi'], ['khsk', 'Shake paw'], ['kfiv', 'High five'], ['kgdb', 'Goodbye'], ['khg', 'Hug'], ['kcmh', 'Come here'],
+    ['khu', 'Hands up'], ['kclap', 'Clap'], ['kchr', 'Cheer'], ['knd', 'Nod'], ['kwh', 'Head wave'], ['klucky', 'Lucky cat']]],
+  ['Dog life', [['ksnf', 'Sniff'], ['kscrh', 'Scratch'], ['kck', 'Check'], ['kdg', 'Dig'], ['kpee', 'Pee'], ['khunt', 'Hunt'], ['kknock', 'Knock'], ['kang', 'Angry']]],
+  ['Tricks', [['kpu', 'Push-ups'], ['kpu1', 'One-arm push-up'], ['kbx', 'Box'], ['kkc', 'Kick'], ['kjmp', 'Jump'], ['kmw', 'Moonwalk'], ['kts', 'Twist'], ['kzz', 'Zigzag'],
+    ['kshowOff', 'Show off']]],
+  ['Floor and acrobatics', [['ktbl', 'Be a table'], ['krl', 'Roll'], ['kpd', 'Play dead'], ['krc', 'Recover'], ['kdropRec', 'Drop recovery'],
+    ['khds', 'Handstand', true], ['klpov', 'Leap over', true], ['kff', 'Front flip', true], ['kbf', 'Back flip', true]]]];
+const POSTURES = POSTURE_GROUPS.flatMap(([, items]) => items), SKILLS = SKILL_GROUPS.flatMap(([, items]) => items);
 // Robot settings. Gyro: gB enables balance/gyro assistance, gb disables it (the same commands developer mode sends).
 // Petoi voice command module: XAc enables its reply tone and reactions, XAd silences and disables them.
 // Servos: d = rest pose then all servos off; #on = servos back on holding the last read positions (link.js macro);
@@ -52,7 +64,7 @@ let datalistCount = 0;
 const MARKUP = `
 <div class="console-top"><p data-part="status" class="console-status">Not connected</p><button type="button" data-part="stop" class="danger" disabled>■ Stop</button></div>
 <div class="console-layout"><div class="console-drive" data-section="move"><h4>Gait</h4><div data-part="gaits" class="gait-chips"></div><div data-part="pad" class="console-pad"></div><p class="note">Gaits keep running in firmware until you press ■ or another command.</p></div>
-<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="console-grid"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="console-grid"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="settings-rows"></div><label class="playback-mode" title="Stream: each frame of a saved function is sent as a joint command on its own timing (starts at once). Upload: the whole skill is sent in one K packet, then played by the robot.">Function playback <select data-part="playback"><option value="stream">Stream</option><option value="upload">Upload</option></select></label></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
+<div class="console-actions"><div data-section="postures"><h4>Postures</h4><div data-part="postures" class="button-groups"></div></div><div data-section="skills"><div class="section-head"><h4>Skills</h4><button type="button" data-part="replaySkill" class="replay" disabled title="Replay the last built-in skill or posture you pressed">▶ Play last skill</button></div><div data-part="skills" class="button-groups"></div></div><div data-section="settings"><h4>Robot settings</h4><div data-part="modules" class="settings-rows"></div><label class="playback-mode" title="Stream: each frame of a saved function is sent as a joint command on its own timing (starts at once). Upload: the whole skill is sent in one K packet, then played by the robot.">Function playback <select data-part="playback"><option value="stream">Stream</option><option value="upload">Upload</option></select></label></div><div data-section="myskills"><div class="section-head"><h4>My skills</h4><button type="button" data-part="replayCustom" class="replay" title="Replay the last custom skill (Petoi T command)">▶ Play last skill</button></div><div data-part="myskills" class="console-grid custom-grid"></div><p data-part="myskillsHint" class="note"></p></div></div></div>
 <details data-part="jointPanel" class="console-joints" open><summary><h4>Joints</h4><span class="note">Move each servo directly (servo degrees, sent as <code>i servo angle</code>).</span></summary>
 <div data-part="joints" class="joint-sliders"></div>
 <div class="joint-actions"><button type="button" data-part="jointsZero">All to 0°</button><button type="button" data-part="jointsRelease">Release head</button><button type="button" data-part="jointsRead">Read angles</button></div>
@@ -100,8 +112,8 @@ export function initConsole(root, {link, toast = message => console.warn(message
       if (!command) b.disabled = true;
       return b;
     }));
-    part('postures').replaceChildren(...POSTURES.map(([code, label]) => button(label, code, () => press(code, label, 'Postures'))));
-    part('skills').replaceChildren(...SKILLS.map(([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label, 'Skills'), risky ? 'risky' : '')));
+    part('postures').replaceChildren(...groups(POSTURE_GROUPS, ([code, label]) => button(label, code, () => press(code, label, 'Postures'))));
+    part('skills').replaceChildren(...groups(SKILL_GROUPS, ([code, label, risky]) => button(risky ? `⚠ ${label}` : label, risky ? `${code} · needs free space and a soft floor` : code, () => press(code, label, 'Skills'), risky ? 'risky' : '')));
     if (part('playback')) { part('playback').value = link.playbackMode || 'stream'; part('playback').onchange = event => { link.playbackMode = event.target.value; }; }
   part('modules').replaceChildren(...SETTINGS.map(([setting, buttons]) => {
       const row = document.createElement('div'); row.className = 'settings-row';
@@ -112,6 +124,16 @@ export function initConsole(root, {link, toast = message => console.warn(message
       return row;
     }));
     part('tools').replaceChildren(...tools.map(tool => button(tool.label, tool.title, () => Promise.resolve(tool.onClick()).catch(fail))));
+  }
+  // Each group its name, then its buttons: beside them in a wide console, above them in a narrow one.
+  function groups(list, make) {
+    return list.map(([name, items]) => {
+      const group = document.createElement('div'); group.className = 'button-group';
+      const caption = document.createElement('span'); caption.className = 'button-group-name'; caption.textContent = name;
+      const grid = document.createElement('div'); grid.className = 'console-grid'; grid.append(...items.map(make));
+      group.append(caption, grid);
+      return group;
+    });
   }
   function renderMySkills() {
     const items = functions();
