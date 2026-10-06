@@ -233,6 +233,12 @@ class CodeWorkbenchTest(unittest.TestCase):
         response = self.c.post('/api/motion-skill', json={'mapping': mapping, 'motion_type': 'behavior', 'hz': 100, 'speed': 1})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertLessEqual(abs(response.json()['skill'][0]), 120)
+        # Lengths whose 119 / duration rounds up (7.2 s, 14.4 s) still fit in the firmware's 120 frames.
+        for end in (7.2, 14.4):
+            self.c.post('/api/frames', json={'frames': [
+                {'time': 0, 'pose': zero, 'easing': 'smooth'}, {'time': end, 'pose': {**zero, name: 20}, 'easing': 'smooth'}]})
+            skill, _, _ = firmware_skill(sim, {'mapping': mapping, 'motion_type': 'behavior', 'hz': 20, 'speed': 1})
+            self.assertEqual(skill[0], -120, end)
 
         self.save([{'id': 'short', 'name': 'short.py', 'source': 'from bittle_sim import ctx\nctx.sleep(.05)'}])
         self.c.post('/api/command', json={'action': 'run', 'value': True})

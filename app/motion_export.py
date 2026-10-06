@@ -78,6 +78,9 @@ def firmware_skill(sim, body):
     # OpenCat stores the behavior frame count in a signed byte. Twenty Hz is
     # smooth enough for firmware interpolation while keeping typical uploads small.
     skill_hz = min(float(body.get('hz', sim.motion_hz)), 20., 119 / duration if duration > 0 else 20.)
+    # duration × (119 / duration) can round to just above 119, which would sample one frame too many (121).
+    while duration > 0 and math.ceil(duration * skill_hz) > 119:
+        skill_hz = math.nextafter(skill_hz, 0)
     samples, mapping, metadata = build_motion(sim, {**body, 'hz': max(1., skill_hz)}, hardware=True)
     if len(samples) > 120:
         raise ValueError('Motion is too long for one firmware skill; shorten it or increase speed')
