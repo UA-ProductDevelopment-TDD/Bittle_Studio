@@ -1,6 +1,6 @@
 # Developer guide
 
-How Bittle Studio is organised, and how to change it safely. For using the app, see the [user guide](user-guide.md).
+How Bittle Studio is organised, and how to change it safely. For using the app, see the [README](../README.md).
 
 ## Big picture
 
