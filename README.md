@@ -156,3 +156,4 @@ Bittle-studio/
 ## For developers
 
 The [developer guide](docs/developer-guide.md) says how it works inside: the code, the robot protocol, the APIs, importing, the Python runner, the physics and its limits, the sources and licences, and how to test changes (`dev-tools/run-tests.cmd` or `dev-tools/run-tests.sh`).
+
