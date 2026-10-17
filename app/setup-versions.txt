@@ -1,0 +1,14 @@
+# Read by the Setup launchers (launchers/windows/Setup.cmd, app/bootstrap.sh for Mac and Linux).
+# Setup downloads uv into .tools/uv, checks it against the checksum below, and lets uv download its own Python into
+# .tools/python. Nothing is installed outside the Bittle Studio folder and no administrator rights are needed.
+#
+# To update uv: change the version and copy the checksums from https://github.com/astral-sh/uv/releases (the .sha256
+# file next to each archive). To change the Python version: also change cp312 in .github/workflows/pybullet-wheels.yml
+# and run that workflow, so that app/pybullet-wheels.json lists wheels for it.
+python 3.12
+uv 0.12.22
+uv-x86_64-pc-windows-msvc.zip ea1397797a0ca15f63516dd0f49c2dde9776db9be5861cab152ebe8ad199894d
+uv-aarch64-apple-darwin.tar.gz 5d714de09501a59393ceca78f4bc232a50478729640d251907160299b2a93ddd
+uv-x86_64-apple-darwin.tar.gz 1b8a5b316883df2daf20fb9a446e5b230e01d947d57aba2694977c5ac5a7e98c
+uv-x86_64-unknown-linux-gnu.tar.gz b9980552309f09c15172b8be828555e375097f16deb459795ce7bfd200380f0b
+uv-aarch64-unknown-linux-gnu.tar.gz 6f66a14e8239871fb477f9746c941fedfa77e8fe28a8bc7c07e1dc7f53a66712

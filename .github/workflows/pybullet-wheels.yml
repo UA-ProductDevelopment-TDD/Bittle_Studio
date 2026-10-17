@@ -1,0 +1,108 @@
+name: pybullet wheels
+
+# pybullet publishes no ready-made packages for Windows or macOS (and for Linux only up to Python 3.11), so pip would
+# compile it on every student's computer, which needs a C++ compiler. This workflow compiles it once per system for
+# Setup's Python (app/setup-versions.txt) and attaches the wheels, with a pybullet-wheels.json listing their checksums,
+# to the release pybullet-<version>, then runs Setup with them on each system. Run it by hand (Actions > pybullet wheels
+# > Run workflow) after changing the pybullet or Python version, then copy that pybullet-wheels.json into app/.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYBULLET: '3.2.7'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows (Intel/AMD; Windows on Arm runs it too), Mac (Apple Silicon and Intel), Linux (Intel/AMD and Arm).
+        os: [windows-latest, macos-14, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the pybullet source
+        run: python -m pip download --no-deps --no-binary pybullet pybullet==${{ env.PYBULLET }} --dest source
+      - uses: pypa/cibuildwheel@v4.2.1
+        with:
+          package-dir: source/pybullet-${{ env.PYBULLET }}.tar.gz
+          output-dir: wheelhouse
+        env:
+          CIBW_BUILD: 'cp312-*'
+          CIBW_ARCHS: native
+          CIBW_SKIP: '*-musllinux_*'
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+          CIBW_TEST_COMMAND: 'python -c "import pybullet as p; p.connect(p.DIRECT); print(p.getAPIVersion())"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: wheelhouse
+          merge-multiple: true
+      - name: Write pybullet-wheels.json
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, re
+          version = os.environ['PYBULLET']
+          wheels = {}
+          for path in sorted(pathlib.Path('wheelhouse').glob('*.whl')):
+              # The keys match platform_key() in app/install.py: win-amd64, macos-arm64, linux-x86_64, ...
+              tag = path.stem.split('-')[-1]
+              system = 'win' if tag.startswith('win') else 'macos' if tag.startswith('macosx') else 'linux'
+              machine = re.search(r'(amd64|arm64|x86_64|aarch64)$', tag).group(1)
+              wheels[f'{system}-{machine}'] = {'file': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+          url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/releases/download/pybullet-{version}/"
+          text = json.dumps({'version': version, 'url': url, 'wheels': wheels}, indent=2) + '\n'
+          pathlib.Path('pybullet-wheels.json').write_text(text)
+          print(text)
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="pybullet-$PYBULLET"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "pybullet $PYBULLET for Setup" \
+              --notes "Ready-made pybullet $PYBULLET packages, built from the PyPI source by the pybullet wheels workflow, so Setup needs no C++ compiler. pybullet is zlib-licensed (https://github.com/bulletphysics/bullet3)."
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber wheelhouse/*.whl pybullet-wheels.json
+
+  check:
+    # Setup as a student runs it, with the new pybullet-wheels.json, on each system; then the Studio's tests.
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the new pybullet-wheels.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "pybullet-$PYBULLET" --pattern pybullet-wheels.json --dir app --clobber
+      - name: Run Setup (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call launchers\windows\Setup.cmd < nul
+      - name: Run Setup (Mac, Linux)
+        if: runner.os != 'Windows'
+        run: bash app/bootstrap.sh
+      - name: Check that the ready-made pybullet was used and run the tests
+        shell: bash
+        run: |
+          ls .tools/wheels/pybullet-*.whl
+          python=.venv/bin/python; [ -x "$python" ] || python=.venv/Scripts/python.exe
+          "$python" -m unittest discover -s app/tests -t app -v

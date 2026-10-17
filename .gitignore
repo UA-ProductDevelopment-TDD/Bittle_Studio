@@ -9,3 +9,4 @@ backups/
 _site/
 _pages/
 .claude/
+.tools/

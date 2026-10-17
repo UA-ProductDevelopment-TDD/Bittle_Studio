@@ -15,8 +15,7 @@ Design, simulate and send motions to a Petoi Bittle robot dog, all on your own c
 
 ## Quick start
 
-1. Install **Python 3.11 or 3.12** from https://www.python.org/downloads/ (on Windows, tick **"Add python.exe to PATH"**).
-2. Open the **`launchers`** folder, then the folder for your computer:
+Open the **`launchers`** folder, then the folder for your computer:
 
 | | Windows (`launchers/windows`) | Mac (`launchers/mac`) | Linux (`launchers/linux`) |
 |---|---|---|---|
@@ -24,18 +23,21 @@ Design, simulate and send motions to a Petoi Bittle robot dog, all on your own c
 | **Start the full Studio** | double-click **Start Bittle Studio** | double-click **Start Bittle Studio** | run `./start-studio.sh` |
 | **Start only the robot console** | double-click **Start Bittle Link** | double-click **Start Bittle Link** | run `./start-bittle-link.sh` |
 
+**Setup** downloads everything Bittle Studio needs, its own Python included, into the Bittle Studio folder. There is nothing to install first and no administrator rights are needed; it only needs the internet and a few minutes the first time.
+
 The Studio opens in your browser at http://127.0.0.1:8765 and the robot console at http://127.0.0.1:8770. Keep the black terminal window open while you work, and press **Ctrl+C** in it to stop.
 
 Use **Chrome or Edge**, because Bluetooth from a web page only works there.
 
 **Getting a new version:** with git, pull (`git pull`, or **Pull** in GitHub Desktop); from a ZIP, download the new ZIP, unzip it, and copy your `saved-motions/` and `user-data/` folders into it. Then run **Setup** again: it installs whatever changed.
 
-<details><summary>Mac or Linux: the launcher won't open?</summary>
+<details><summary>Setup or a launcher won't work?</summary>
 
 - **Mac, "cannot be opened because it is from an unidentified developer":** right-click the launcher, choose **Open**, then **Open** again. This is needed once per launcher.
 - **Mac or Linux, "permission denied":** open a terminal in the launcher's folder and run `chmod +x *.command *.sh`.
-- **Linux:** run the launchers from a terminal (`cd launchers/linux`, then `./setup.sh`). Some distributions also need `sudo apt install python3-venv` first.
-- **Setup fails while installing pybullet:** that computer has to build the physics package itself. On a Mac run `xcode-select --install`, on Linux install `build-essential`, then run Setup again.
+- **Linux:** run the launchers from a terminal (`cd launchers/linux`, then `./setup.sh`).
+- **Setup can't download something:** it needs github.com (Python and the physics package), pypi.org (the other Python packages) and registry.npmjs.org (the 3D viewer). On a school network that blocks one of them, ask the network administrator.
+- **Setup stops while installing pybullet (the physics package):** there was no ready-made one for that computer, so it had to build it itself. On Windows install **Desktop development with C++** from https://visualstudio.microsoft.com/visual-cpp-build-tools/, on a Mac run `xcode-select --install`, on Linux install `build-essential`, then run Setup again.
 </details>
 
 ## From the simulator to the real robot in five steps
@@ -110,7 +112,7 @@ The **Serial monitor** (top bar, or Window) lists every command sent to the robo
 
 ### Bittle Link: the robot console on its own
 
-**Start Bittle Link** opens just the robot console, without the simulator, at http://127.0.0.1:8770. It needs only Python. The same console runs online, with nothing to install, on the [project's website](https://ua-productdevelopment-tdd.github.io/Bittle_Studio/). Its buttons are kept in that browser; use **Save pack** and **Import pack** to move them.
+**Start Bittle Link** opens just the robot console, without the simulator, at http://127.0.0.1:8770. It runs with Setup's Python, or with any Python 3 if you skipped Setup. The same console runs online, with nothing to install, on the [project's website](https://ua-productdevelopment-tdd.github.io/Bittle_Studio/). Its buttons are kept in that browser; use **Save pack** and **Import pack** to move them.
 
 ### Export to Python
 
@@ -150,7 +152,8 @@ Bittle-studio/
 ├─ robot-models/        the Bittle 3D model (URDF + meshes)
 ├─ app/                 the software itself (you don't need to open this)
 ├─ dev-tools/           for developers: automated tests, website builder
-└─ user-data/           created automatically: autosave and imported files (not shared)
+├─ user-data/           created automatically: autosave and imported files (not shared)
+└─ .tools/, .venv/      created by Setup: its Python and the installed packages (hidden on Mac and Linux)
 ```
 
 ## For developers
