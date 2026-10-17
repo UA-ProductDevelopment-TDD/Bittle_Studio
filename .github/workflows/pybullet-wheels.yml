@@ -9,8 +9,9 @@ name: pybullet wheels
 on:
   workflow_dispatch:
 
+# Only the release job can write to the repository; the jobs that build and run code only read it.
 permissions:
-  contents: write
+  contents: read
 
 env:
   PYBULLET: '3.2.7'
@@ -29,7 +30,7 @@ jobs:
           python-version: '3.12'
       - name: Download the pybullet source
         run: python -m pip download --no-deps --no-binary pybullet pybullet==${{ env.PYBULLET }} --dest source
-      - uses: pypa/cibuildwheel@v4.2.1
+      - uses: pypa/cibuildwheel@e090b81e30c4d855ea63bf4b6e59204c09a101ae  # v4.2.1
         with:
           package-dir: source/pybullet-${{ env.PYBULLET }}.tar.gz
           output-dir: wheelhouse
@@ -47,6 +48,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
