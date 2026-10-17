@@ -35,7 +35,7 @@ class SetupPinsTest(unittest.TestCase):
     def test_pybullet_wheels_match_the_requirements(self):
         info = json.loads((APP / 'pybullet-wheels.json').read_text(encoding='utf-8'))
         self.assertIn(f'pybullet=={info["version"]}', (APP / 'requirements.txt').read_text(encoding='utf-8').split())
-        self.assertTrue(info['url'].endswith(f'/releases/download/pybullet-{info["version"]}/'))
+        self.assertRegex(info['url'], rf'/releases/download/pybullet-{re.escape(info["version"])}-build\d+/$')
         python = 'cp' + pins()['python'].replace('.', '')
         for key, wheel in info['wheels'].items():
             self.assertRegex(key, r'^(win|macos|linux)-(amd64|arm64|x86_64|aarch64)$')

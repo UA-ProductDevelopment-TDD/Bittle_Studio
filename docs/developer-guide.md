@@ -53,7 +53,7 @@ The URL prefixes `/assets` and `/data` are stored inside saved projects, so they
 | `install.py` | Stdlib-only installer behind every Setup launcher (run again after a new version): creates `.venv` (replacing one made with another Python), installs `requirements.txt` with the ready-made pybullet, and downloads three.js from the npm registry, verified against `package-lock.json`. Node.js is not needed. |
 | `bootstrap.sh` | The Mac and Linux Setup: downloads uv and, with it, Python into `.tools/`, then runs `install.py`. `launchers/windows/Setup.cmd` does the same on Windows. |
 | `setup-versions.txt` | The Python version Setup installs, and the uv version with its checksums. |
-| `pybullet-wheels.json` | The ready-made pybullet wheels per system, with their SHA-256 checksums, from the `pybullet-<version>` GitHub release. |
+| `pybullet-wheels.json` | The ready-made pybullet wheels per system, with their SHA-256 checksums, from a `pybullet-<version>-build<N>` GitHub release. |
 | `requirements.txt` | Pinned Python packages. |
 | `package.json`, `package-lock.json` | Pin the three.js version. `install.py` reads only the lock file; developers with Node.js can still run `npm ci --prefix app`. |
 
@@ -191,7 +191,7 @@ Students only need the internet: the Setup launchers install nothing outside the
 pybullet publishes no wheels for Windows or macOS (and for Linux only up to Python 3.11), which is why this project builds its own. To change the pybullet or Python version, or to rebuild the wheels:
 
 1. Change `pybullet==` in `app/requirements.txt` and `PYBULLET` in `.github/workflows/pybullet-wheels.yml`; for Python, `python` in `app/setup-versions.txt` and `cp312` in the workflow.
-2. Push, then run **Actions > pybullet wheels > Run workflow**. It builds the wheels on Windows, Mac (Apple Silicon and Intel) and Linux (Intel/AMD and Arm), publishes them with a `pybullet-wheels.json` as the release `pybullet-<version>`, then runs Setup and the tests on each system with them.
+2. Push, then run **Actions > pybullet wheels > Run workflow**. It builds the wheels on Windows, Mac (Apple Silicon and Intel) and Linux (Intel/AMD and Arm), publishes them with a `pybullet-wheels.json` as a new release `pybullet-<version>-build<run number>`, then runs Setup and the tests on each system with them. Until you push the new JSON, Setup keeps using the release the old one names.
 3. Copy that release's `pybullet-wheels.json` into `app/` and push it.
 
 To update uv, change `uv` in `app/setup-versions.txt` and copy each archive's checksum from the `.sha256` files of that [uv release](https://github.com/astral-sh/uv/releases). `app/tests/test_install.py` checks that the pins are complete and match `requirements.txt`.

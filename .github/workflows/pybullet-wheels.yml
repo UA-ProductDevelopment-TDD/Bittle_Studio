@@ -3,8 +3,9 @@ name: pybullet wheels
 # pybullet publishes no ready-made packages for Windows or macOS (and for Linux only up to Python 3.11), so pip would
 # compile it on every student's computer, which needs a C++ compiler. This workflow compiles it once per system for
 # Setup's Python (app/setup-versions.txt) and attaches the wheels, with a pybullet-wheels.json listing their checksums,
-# to the release pybullet-<version>, then runs Setup with them on each system. Run it by hand (Actions > pybullet wheels
-# > Run workflow) after changing the pybullet or Python version, then copy that pybullet-wheels.json into app/.
+# to a new release pybullet-<version>-build<run number>, then runs Setup with them on each system. Run it by hand
+# (Actions > pybullet wheels > Run workflow) after changing the pybullet or Python version, then copy that
+# pybullet-wheels.json into app/. Until then Setup keeps using the release that app/pybullet-wheels.json names.
 
 on:
   workflow_dispatch:
@@ -63,6 +64,7 @@ jobs:
         run: |
           import hashlib, json, os, pathlib, re
           version = os.environ['PYBULLET']
+          release = f"pybullet-{version}-build{os.environ['GITHUB_RUN_NUMBER']}"
           wheels = {}
           for path in sorted(pathlib.Path('wheelhouse').glob('*.whl')):
               # The keys match platform_key() in app/install.py: win-amd64, macos-arm64, linux-x86_64, ...
@@ -70,7 +72,7 @@ jobs:
               system = 'win' if tag.startswith('win') else 'macos' if tag.startswith('macosx') else 'linux'
               machine = re.search(r'(amd64|arm64|x86_64|aarch64)$', tag).group(1)
               wheels[f'{system}-{machine}'] = {'file': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
-          url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/releases/download/pybullet-{version}/"
+          url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/releases/download/{release}/"
           text = json.dumps({'version': version, 'url': url, 'wheels': wheels}, indent=2) + '\n'
           pathlib.Path('pybullet-wheels.json').write_text(text)
           print(text)
@@ -78,7 +80,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="pybullet-$PYBULLET"
+          tag="pybullet-$PYBULLET-build$GITHUB_RUN_NUMBER"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "pybullet $PYBULLET for Setup" \
               --notes "Ready-made pybullet $PYBULLET packages, built from the PyPI source by the pybullet wheels workflow, so Setup needs no C++ compiler. pybullet is zlib-licensed (https://github.com/bulletphysics/bullet3)."
@@ -98,7 +100,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download "pybullet-$PYBULLET" --pattern pybullet-wheels.json --dir app --clobber
+        run: gh release download "pybullet-$PYBULLET-build$GITHUB_RUN_NUMBER" --pattern pybullet-wheels.json --dir app --clobber
       - name: Run Setup (Windows)
         if: runner.os == 'Windows'
         shell: cmd

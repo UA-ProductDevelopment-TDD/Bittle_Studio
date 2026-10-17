@@ -82,7 +82,8 @@ def pack_filename(name):
 
 def pack_path(folder, filename):
     path = (Path(folder) / filename).resolve()
-    if path.parent != Path(folder).resolve() or path.suffix != '.json':
+    # A backslash separates folders on Windows, so it is refused on every system.
+    if '\\' in filename or path.parent != Path(folder).resolve() or path.suffix != '.json':
         raise ValueError('Invalid pack file name')
     return path
 
