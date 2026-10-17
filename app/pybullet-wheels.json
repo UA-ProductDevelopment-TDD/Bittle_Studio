@@ -1,5 +1,26 @@
 {
   "version": "3.2.7",
-  "url": "https://github.com/UA-ProductDevelopment-TDD/Bittle_Studio/releases/download/pybullet-3.2.7/",
-  "wheels": {}
+  "url": "https://github.com/UA-ProductDevelopment-TDD/Bittle_Studio/releases/download/pybullet-3.2.7-build4/",
+  "wheels": {
+    "macos-arm64": {
+      "file": "pybullet-3.2.7-cp312-cp312-macosx_11_0_arm64.whl",
+      "sha256": "16fe217d46882f609bb7bd847a22256c373d000ba14eb21bfd77d4bccd16e148"
+    },
+    "macos-x86_64": {
+      "file": "pybullet-3.2.7-cp312-cp312-macosx_11_0_x86_64.whl",
+      "sha256": "22bbfd370e24887a3b5a0a8d7116f32e3c89c4378564f1b310a6d5bac4a09e52"
+    },
+    "linux-aarch64": {
+      "file": "pybullet-3.2.7-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "8df33a3aa877b6a4f259dcee568d1e0d35b088dae7672c1c0f9977561083b98f"
+    },
+    "linux-x86_64": {
+      "file": "pybullet-3.2.7-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "21413a0267c27d8358938fc80269f8fdd1bbcef5f5932c6987c14118cfece273"
+    },
+    "win-amd64": {
+      "file": "pybullet-3.2.7-cp312-cp312-win_amd64.whl",
+      "sha256": "d7d4bb8c94369b1e3dd28f21c1ffdd80e139c1b4964d8758308a364b617c93f3"
+    }
+  }
 }
