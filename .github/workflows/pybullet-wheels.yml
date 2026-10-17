@@ -39,6 +39,9 @@ jobs:
           CIBW_ARCHS: native
           CIBW_SKIP: '*-musllinux_*'
           MACOSX_DEPLOYMENT_TARGET: '11.0'
+          # pybullet's bundled zlib defines fdopen as NULL on Macs, which newer macOS SDKs reject; defining fdopen
+          # as itself skips that (zutil.h checks #ifndef fdopen).
+          CIBW_ENVIRONMENT_MACOS: CFLAGS="-Dfdopen=fdopen"
           CIBW_TEST_COMMAND: 'python -c "import pybullet as p; p.connect(p.DIRECT); print(p.getAPIVersion())"'
       - uses: actions/upload-artifact@v4
         with:
