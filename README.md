@@ -2,6 +2,14 @@
 
 Design, simulate and send motions to a Petoi Bittle robot dog, all on your own computer. Bittle Studio pairs a 3D viewport and a real physics simulation (PyBullet) with a Bluetooth console for the physical robot. No account or cloud service is needed.
 
+<p align="center">
+  <img src="docs/images/trot.gif" alt="Bittle trotting" width="190">
+  <img src="docs/images/hi.gif" alt="Bittle sitting and waving hello" width="180">
+  <img src="docs/images/push-ups.gif" alt="Bittle doing push-ups" width="190">
+  <img src="docs/images/high-five.gif" alt="Bittle giving a high five" width="180">
+</p>
+<p align="center"><sub>Trot, hello, push-ups and high five: Petoi's own skill data played on Bittle Studio's 3D model.</sub></p>
+
 ## What you can do
 
 - **Design motions** on a timeline, pose by pose, and watch them in a 3D physics simulation before the robot ever moves.
@@ -11,17 +19,23 @@ Design, simulate and send motions to a Petoi Bittle robot dog, all on your own c
 - **Share your work** as motion packs, or export functions as Python scripts for Petoi's `PetoiRobot` library.
 - **Program it in Python** in the built-in code panel, or talk to it through the optional voice companion.
 
-**Just want to drive the robot?** The Bluetooth console runs online, with nothing to install: https://ua-productdevelopment-tdd.github.io/Bittle_Studio/
+### 🎮 Just want to drive the robot?
+
+**[Open Bittle Link in your browser →](https://ua-productdevelopment-tdd.github.io/Bittle_Studio/bittle-link/)** The Bluetooth console runs online, with nothing to install (Chrome or Edge).
+
+<p align="center">
+  <a href="https://ua-productdevelopment-tdd.github.io/Bittle_Studio/bittle-link/"><img src="docs/images/bittle-link.png" alt="Bittle Link, the robot console: gaits with a direction pad, postures, and skills grouped as greetings, dog life, tricks and acrobatics" width="760"></a>
+</p>
 
 ## Quick start
 
-Open the **`launchers`** folder, then the folder for your computer:
+Open the **`launchers`** folder and the folder for your computer (`windows`, `mac` or `linux`):
 
-| | Windows (`launchers/windows`) | Mac (`launchers/mac`) | Linux (`launchers/linux`) |
-|---|---|---|---|
-| **Install once** | double-click **Setup** | double-click **Setup** | run `./setup.sh` |
-| **Start the full Studio** | double-click **Start Bittle Studio** | double-click **Start Bittle Studio** | run `./start-studio.sh` |
-| **Start only the robot console** | double-click **Start Bittle Link** | double-click **Start Bittle Link** | run `./start-bittle-link.sh` |
+1. **Setup**: installs everything, once.
+2. **Start Bittle Studio**: the full Studio.
+3. **Start Bittle Link**: only the robot console.
+
+On Windows and Mac, double-click the file; on Linux, run it from a terminal (`./setup.sh`, `./start-studio.sh`, `./start-bittle-link.sh`).
 
 **Setup** downloads everything Bittle Studio needs, its own Python included, into the Bittle Studio folder. There is nothing to install first and no administrator rights are needed; it only needs the internet and a few minutes the first time.
 
@@ -41,6 +55,14 @@ Use **Chrome or Edge**, because Bluetooth from a web page only works there.
 </details>
 
 ## From the simulator to the real robot in five steps
+
+```mermaid
+flowchart LR
+    A["🎞️ Timeline<br/>pose · keyframes · play"] --> B["★ Save as function"]
+    B --> C["🔘 Buttons tab<br/>save a pack"]
+    C --> D["📦 Bittle Link<br/>import the pack"]
+    D --> E["🐕 Connect Bittle<br/>press your buttons"]
+```
 
 1. In the Studio, make a motion on the **timeline** (pose the joints, add keyframes, press play).
 2. Press **★ Save as function** in the timeline and give it a name; it appears in the **Functions** list next to the timeline.
