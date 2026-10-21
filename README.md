@@ -17,7 +17,7 @@ Design, simulate and send motions to a Petoi Bittle robot dog, all on your own c
 - **Drive the real Bittle** over Bluetooth: gaits, postures, skills, single joints and your own saved functions.
 - **Learn the real commands**: the serial monitor shows every command with a plain-language explanation, even when no robot is connected.
 - **Share your work** as motion packs, or export functions as Python scripts for Petoi's `PetoiRobot` library.
-- **Program it in Python** in the built-in code panel, or talk to it through the optional voice companion.
+- **Program it in Python** in the built-in code panel.
 
 ### 🎮 Just want to drive the robot?
 
@@ -150,10 +150,6 @@ On a saved function, **Python** (or **Export selected ↗** for several) writes 
 - **Stop all** stops every script and pauses physics.
 
 Code runs on your computer with your rights: only run code you trust.
-
-### Voice companion
-
-**Window → Voice companion** lets you talk to Bittle. It needs an OpenAI API key, which is kept only while the Studio runs, and internet access; it may cost OpenAI usage. It can talk without a robot; it moves the robot only when Developer mode is off.
 
 ### Good to know
 
